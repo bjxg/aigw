@@ -111,7 +111,6 @@ aigw-server turns AI CLI subscriptions, OAuth credentials, API keys, and compati
 | 🌐 **Chinese / English UI** | Built-in i18n for the management panel and Compose/TUI language selection |
 | 🌙 **Dark Mode** | Full dark theme for long-running operational sessions |
 | 🧬 **Visual Config Editor** | Edit runtime config visually or inspect source YAML when you need exact control |
-| 🔄 **Online Update Flow** | Check versions, review update notes, trigger the updater sidecar, and wait for backend recovery from the panel |
 | 📥 **CC Switch Import** | Import cc-switch style configuration into the managed model/channel workspace |
 
 ### 🗄️ Data Persistence
@@ -183,11 +182,9 @@ The gallery below uses the latest supplied screenshots, covering the current end
 | :-------------------- | :----------------------- |
 | <img src="docs/images/readme-showcase/model-openrouter-sync.png" width="100%" alt="OpenRouter model ID and pricing sync" /> | <img src="docs/images/readme-showcase/custom-model-maintenance.png" width="100%" alt="Custom model maintenance" /> |
 
-| Image generation config | Online update flow |
+| Image generation config | System information |
 | :---------------------- | :----------------- |
-| <img src="docs/images/readme-showcase/image-generation-config.png" width="100%" alt="Image generation configuration" /> | <img src="docs/images/readme-showcase/online-update.png" width="100%" alt="Online update mechanism" /> |
-
-| System information |
+| <img src="docs/images/readme-showcase/image-generation-config.png" width="100%" alt="Image generation configuration" /> | <img src="docs/images/readme-showcase/system-info.png" width="100%" alt="System information page" /> |
 | :----------------- |
 | <img src="docs/images/readme-showcase/system-info.png" width="100%" alt="System information page" /> |
 
@@ -212,7 +209,7 @@ The gallery below uses the latest supplied screenshots, covering the current end
 
 ### 🐳 Install With Docker Compose
 
-Docker Compose is the recommended installation path for aigw-server. The included `docker-compose.yml` uses the published `ghcr.io/bjxg/aigw-server:latest` image by default and starts both the API service and updater sidecar.
+Docker Compose is the recommended installation path for aigw-server. The included `docker-compose.yml` uses the published `ghcr.io/bjxg/aigw-server:latest` image by default and starts the API service.
 
 ```bash
 git clone https://github.com/bjxg/aigw-server.git
@@ -242,20 +239,6 @@ After startup:
 Set `aigw-server_LOCALE=en` or `aigw-server_LOCALE=zh` in your Compose environment to control the default TUI language.
 
 For cloud platforms that only allow one mounted directory, set `AUTH_PATH` to the authentication directory inside the container, for example `/CLIProxyAPI/auths`. `CLI_PROXY_AUTH_PATH` remains the host-side bind path, while `AUTH_PATH` is also used to override `auth-dir` at runtime.
-
-To disable automatic update prompts, set the following in `config.yaml` or turn off **Automatic Update Checks** in the Config page:
-
-```yaml
-auto-update:
-  enabled: false
-```
-
-Update checks follow the stable `main` Docker image by default. To test dev builds, set `channel: dev` in `config.yaml` or choose **Development (dev)** from **Update Channel** in the Config page:
-
-```yaml
-auto-update:
-  channel: dev
-```
 
 ### 🗄️ Enabling Data Persistence
 

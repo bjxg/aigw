@@ -465,13 +465,6 @@ remote-management:
   secret-key: "${CFG_SECRET}"
   disable-control-panel: false
 
-auto-update:
-  enabled: true
-  channel: main
-  repository: https://github.com/bjxg/aigw-server
-  docker-image: ghcr.io/bjxg/aigw-server
-  updater-url: http://aigw-server-updater:8320
-
 auth-dir: "/root/.cli-proxy-api"
 
 api-keys:
@@ -498,11 +491,6 @@ aigw-server_LOCALE=${SCRIPT_LOCALE}
 aigw-server_LANG=$(lang_tag)
 aigw-server_LANGUAGE=$(language_tag)
 aigw-server_PORT=${CFG_PORT}
-aigw-server_UPDATE_CHANNEL=main
-aigw-server_UPDATER_URL=http://aigw-server-updater:8320
-aigw-server_UPDATER_TOKEN=$(rand_hex 16)
-aigw-server_TARGET_SERVICE=aigw-server
-aigw-server_COMPOSE_PROJECT_NAME=$(basename "${INSTALL_DIR}")
 CLI_PROXY_CONFIG_PATH=${INSTALL_DIR}/config.yaml
 CLI_PROXY_AUTH_PATH=${INSTALL_DIR}/auths
 AUTH_PATH=/root/.cli-proxy-api
@@ -530,10 +518,6 @@ services:
     environment:
       TZ: ${TZ}
       aigw-server_LOCALE: ${aigw-server_LOCALE}
-      aigw-server_UPDATE_CHANNEL: ${aigw-server_UPDATE_CHANNEL}
-      aigw-server_UPDATER_URL: ${aigw-server_UPDATER_URL}
-      aigw-server_UPDATER_TOKEN: ${aigw-server_UPDATER_TOKEN}
-      aigw-server_TARGET_SERVICE: ${aigw-server_TARGET_SERVICE}
       AUTH_PATH: ${AUTH_PATH}
       LANG: ${aigw-server_LANG}
       LANGUAGE: ${aigw-server_LANGUAGE}
@@ -545,22 +529,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    restart: unless-stopped
-
-  aigw-server-updater:
-    image: ${CLI_PROXY_IMAGE}
-    platform: ${CLI_PROXY_PLATFORM}
-    command: ["./aigw-server-updater"]
-    environment:
-      aigw-server_UPDATER_TOKEN: ${aigw-server_UPDATER_TOKEN}
-      aigw-server_COMPOSE_FILE: ${aigw-server_INSTALL_DIR}/docker-compose.yml
-      aigw-server_ENV_FILE: ${aigw-server_INSTALL_DIR}/.env
-      aigw-server_COMPOSE_PROJECT_NAME: ${aigw-server_COMPOSE_PROJECT_NAME}
-      aigw-server_TARGET_SERVICE: ${aigw-server_TARGET_SERVICE}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./docker-compose.yml:${aigw-server_INSTALL_DIR}/docker-compose.yml:ro
-      - ./.env:${aigw-server_INSTALL_DIR}/.env
     restart: unless-stopped
 YAML
 }

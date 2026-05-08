@@ -14,15 +14,8 @@ services:
         FRONTEND_REF: ${FRONTEND_REF:-main}
         FRONTEND_COMMIT: ${FRONTEND_COMMIT:-}
     container_name: cli-proxy-api
-    # env_file:
-    #   - .env
     environment:
-      DEPLOY: ${DEPLOY:-}
       aigw-server_LOCALE: ${aigw-server_LOCALE:-zh}
-      aigw-server_UPDATE_CHANNEL: ${aigw-server_UPDATE_CHANNEL:-main}
-      aigw-server_UPDATER_URL: ${aigw-server_UPDATER_URL:-http://aigw-server-updater:8320}
-      aigw-server_UPDATER_TOKEN: ${aigw-server_UPDATER_TOKEN:-}
-      aigw-server_TARGET_SERVICE: ${aigw-server_TARGET_SERVICE:-cli-proxy-api}
       AUTH_PATH: ${AUTH_PATH:-/root/.cli-proxy-api}
       LANG: ${aigw-server_LANG:-C.UTF-8}
       LANGUAGE: ${aigw-server_LANGUAGE:-en_US:en}
@@ -39,21 +32,4 @@ services:
       - ${CLI_PROXY_AUTH_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/auths}:${AUTH_PATH:-/root/.cli-proxy-api}
       - ${CLI_PROXY_LOG_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/logs}:/CLIProxyAPI/logs
       - ${CLI_PROXY_DATA_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/data}:/CLIProxyAPI/data
-    restart: unless-stopped
-
-  aigw-server-updater:
-    image: ${CLI_PROXY_IMAGE:-ghcr.io/bjxg/aigw-server:latest}
-    pull_policy: ${CLI_PROXY_PULL_POLICY:-always}
-    command: ["./aigw-server-updater"]
-    environment:
-      aigw-server_UPDATER_TOKEN: ${aigw-server_UPDATER_TOKEN:-}
-      aigw-server_PROJECT_DIR: ${aigw-server_PROJECT_DIR:-${PWD:-.}}
-      aigw-server_COMPOSE_FILE: ${aigw-server_PROJECT_DIR:-${PWD:-.}}/docker-compose.yml
-      aigw-server_ENV_FILE: ${aigw-server_ENV_FILE:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/.env}
-      aigw-server_COMPOSE_PROJECT_NAME: ${aigw-server_COMPOSE_PROJECT_NAME:-}
-      aigw-server_TARGET_SERVICE: ${aigw-server_TARGET_SERVICE:-cli-proxy-api}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./docker-compose.yml:${aigw-server_PROJECT_DIR:-${PWD:-.}}/docker-compose.yml:ro
-      - ./.env:${aigw-server_PROJECT_DIR:-${PWD:-.}}/.env
     restart: unless-stopped
