@@ -3,8 +3,6 @@ package executor
 import (
 	"net/http"
 	"net/url"
-
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v6/sdk/translator"
 )
 
 // RequestedModelMetadataKey stores the client-requested model name in Options.Metadata.
@@ -35,7 +33,7 @@ type Request struct {
 	// Payload is the provider specific JSON payload.
 	Payload []byte
 	// Format represents the provider payload schema.
-	Format sdktranslator.Format
+	Format string
 	// Metadata carries optional provider specific execution hints.
 	Metadata map[string]any
 }
@@ -53,7 +51,7 @@ type Options struct {
 	// OriginalRequest preserves the inbound request bytes prior to translation.
 	OriginalRequest []byte
 	// SourceFormat identifies the inbound schema.
-	SourceFormat sdktranslator.Format
+	SourceFormat string
 	// Metadata carries extra execution hints shared across selection and executors.
 	Metadata map[string]any
 }

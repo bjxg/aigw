@@ -118,12 +118,12 @@ func (e *BedrockExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, 
 	originalTranslated := sdktranslator.TranslateRequest(from, to, baseModel, originalPayloadSource, translatorStreamMode)
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, translatorStreamMode)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return resp, err
 	}
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 	body = disableThinkingIfToolChoiceForced(body)
 	betaTokens := resolveBedrockBetaTokens(opts.Headers.Get("anthropic-beta"), body, mappedModel)
 	bodyForTranslation := body
@@ -188,12 +188,12 @@ func (e *BedrockExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.
 	originalTranslated := sdktranslator.TranslateRequest(from, to, baseModel, originalPayloadSource, true)
 	bodyForTranslation := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, true)
 	bodyForTranslation, _ = sjson.SetBytes(bodyForTranslation, "model", baseModel)
-	bodyForTranslation, err = thinking.ApplyThinking(bodyForTranslation, req.Model, from.String(), to.String(), e.Identifier())
+	bodyForTranslation, err = thinking.ApplyThinking(bodyForTranslation, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return nil, err
 	}
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	bodyForTranslation = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", bodyForTranslation, originalTranslated, requestedModel)
+	bodyForTranslation = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", bodyForTranslation, originalTranslated, requestedModel)
 	bodyForTranslation = disableThinkingIfToolChoiceForced(bodyForTranslation)
 	betaTokens := resolveBedrockBetaTokens(opts.Headers.Get("anthropic-beta"), bodyForTranslation, mappedModel)
 	body, err := prepareBedrockRequestBody(bodyForTranslation, mappedModel, betaTokens)

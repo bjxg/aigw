@@ -59,7 +59,6 @@ func ApplyAuthExcludedModelsMeta(auth *coreauth.Auth, cfg *config.Config, perKey
 	if auth == nil || cfg == nil {
 		return
 	}
-	authKindKey := strings.ToLower(strings.TrimSpace(authKind))
 	seen := make(map[string]struct{})
 	add := func(list []string) {
 		for _, entry := range list {
@@ -72,16 +71,7 @@ func ApplyAuthExcludedModelsMeta(auth *coreauth.Auth, cfg *config.Config, perKey
 			}
 		}
 	}
-	if authKindKey == "apikey" {
-		add(perKey)
-	} else {
-		// For OAuth: merge per-account excluded models with global provider-level exclusions
-		add(perKey)
-		if cfg.OAuthExcludedModels != nil {
-			providerKey := strings.ToLower(strings.TrimSpace(auth.Provider))
-			add(cfg.OAuthExcludedModels[providerKey])
-		}
-	}
+	add(perKey)
 	combined := make([]string, 0, len(seen))
 	for k := range seen {
 		combined = append(combined, k)

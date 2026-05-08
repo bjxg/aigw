@@ -21,8 +21,6 @@ const (
 	RuntimeSettingClaudeHeaderDefaults = "claude-header-defaults"
 	RuntimeSettingKimiHeaderDefaults   = "kimi-header-defaults"
 	RuntimeSettingIdentityFingerprint  = "identity-fingerprint"
-	RuntimeSettingOAuthExcludedModels  = "oauth-excluded-models"
-	RuntimeSettingOAuthModelAlias      = "oauth-model-alias"
 	RuntimeSettingPayload              = "payload"
 )
 
@@ -288,42 +286,6 @@ func runtimeSettingSpecs() []runtimeSettingSpec {
 			},
 		},
 		{
-			key: RuntimeSettingOAuthExcludedModels,
-			meaningful: func(cfg *config.Config) bool {
-				return len(config.NormalizeOAuthExcludedModels(cfg.OAuthExcludedModels)) > 0
-			},
-			value: func(cfg *config.Config) any {
-				return config.NormalizeOAuthExcludedModels(cfg.OAuthExcludedModels)
-			},
-			apply: func(cfg *config.Config, raw json.RawMessage) bool {
-				var value map[string][]string
-				if err := json.Unmarshal(raw, &value); err != nil {
-					log.Warnf("usage: decode %s: %v", RuntimeSettingOAuthExcludedModels, err)
-					return false
-				}
-				cfg.OAuthExcludedModels = config.NormalizeOAuthExcludedModels(value)
-				return true
-			},
-		},
-		{
-			key: RuntimeSettingOAuthModelAlias,
-			meaningful: func(cfg *config.Config) bool {
-				return len(normalizeOAuthModelAliasSetting(cfg.OAuthModelAlias)) > 0
-			},
-			value: func(cfg *config.Config) any {
-				return normalizeOAuthModelAliasSetting(cfg.OAuthModelAlias)
-			},
-			apply: func(cfg *config.Config, raw json.RawMessage) bool {
-				var value map[string][]config.OAuthModelAlias
-				if err := json.Unmarshal(raw, &value); err != nil {
-					log.Warnf("usage: decode %s: %v", RuntimeSettingOAuthModelAlias, err)
-					return false
-				}
-				cfg.OAuthModelAlias = normalizeOAuthModelAliasSetting(value)
-				return true
-			},
-		},
-		{
 			key: RuntimeSettingPayload,
 			meaningful: func(cfg *config.Config) bool {
 				return payloadConfigMeaningful(cfg.Payload)
@@ -376,18 +338,6 @@ func claudeIdentityFingerprintMeaningful(fp config.ClaudeIdentityFingerprintConf
 		normalized.StainlessRuntimeVersion != defaults.StainlessRuntimeVersion ||
 		normalized.StainlessTimeout != defaults.StainlessTimeout ||
 		normalized.SessionMode != defaults.SessionMode
-}
-
-func normalizeOAuthModelAliasSetting(entries map[string][]config.OAuthModelAlias) map[string][]config.OAuthModelAlias {
-	if len(entries) == 0 {
-		return nil
-	}
-	holder := &config.Config{OAuthModelAlias: entries}
-	holder.SanitizeOAuthModelAlias()
-	if len(holder.OAuthModelAlias) == 0 {
-		return nil
-	}
-	return holder.OAuthModelAlias
 }
 
 func payloadConfigMeaningful(payload config.PayloadConfig) bool {

@@ -122,12 +122,12 @@ func (e *OpenCodeGoExecutor) executeMessages(ctx context.Context, auth *cliproxy
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, from != to)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return resp, err
 	}
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 
 	url := strings.TrimSuffix(opencodeGoBaseURL, "/") + "/messages"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
@@ -197,12 +197,12 @@ func (e *OpenCodeGoExecutor) executeMessagesStream(ctx context.Context, auth *cl
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, true)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return nil, err
 	}
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 
 	url := strings.TrimSuffix(opencodeGoBaseURL, "/") + "/messages"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))

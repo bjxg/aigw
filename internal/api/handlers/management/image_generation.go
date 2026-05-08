@@ -19,7 +19,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v6/sdk/translator"
 )
 
 const (
@@ -130,12 +129,12 @@ func (h *Handler) executeImageGenerationTest(ctx context.Context, payload []byte
 			}
 		}
 		resp, execErr := h.authManager.Execute(ctx, []string{"codex"}, coreexecutor.Request{
-			Model:   "",
-			Payload: execPayload,
-			Format:  sdktranslator.FromString("openai"),
-		}, coreexecutor.Options{
-			Alt:          alt,
-			SourceFormat: sdktranslator.FromString("openai"),
+		Model:   "",
+		Payload: execPayload,
+		Format:  "openai",
+	}, coreexecutor.Options{
+		Alt:          alt,
+		SourceFormat: "openai",
 			Metadata: map[string]any{
 				coreexecutor.SinglePickMetadataKey: true,
 			},

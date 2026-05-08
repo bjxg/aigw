@@ -35,14 +35,6 @@ func (h *Handler) GetDashboardSummary(c *gin.Context) {
 	}
 	apiKeyCount = len(usage.ListAPIKeys())
 
-	if h.authManager != nil {
-		for _, auth := range h.authManager.List() {
-			if entry := h.buildAuthFileEntry(auth); entry != nil {
-				authFileCount++
-			}
-		}
-	}
-
 	providerTotal := geminiCount + claudeCount + codexCount + vertexCount + openaiCount
 
 	// ── Usage KPIs (from SQLite — persists across restarts) ──

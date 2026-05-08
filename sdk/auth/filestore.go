@@ -208,16 +208,7 @@ func (s *FileTokenStore) readAuthFile(path, baseDir string) (*cliproxyauth.Auth,
 				}
 			}
 			if accessToken != "" {
-				fetchedProjectID, errFetch := FetchAntigravityProjectID(context.Background(), accessToken, http.DefaultClient)
-				if errFetch == nil && strings.TrimSpace(fetchedProjectID) != "" {
-					metadata["project_id"] = strings.TrimSpace(fetchedProjectID)
-					if raw, errMarshal := json.Marshal(metadata); errMarshal == nil {
-						if file, errOpen := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o600); errOpen == nil {
-							_, _ = file.Write(raw)
-							_ = file.Close()
-						}
-					}
-				}
+				// Antigravity OAuth project ID fetching removed
 			}
 		}
 	}

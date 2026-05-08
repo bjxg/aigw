@@ -103,15 +103,10 @@ func (s *Service) RegisterUsagePlugin(plugin usage.Plugin) {
 	usage.RegisterPlugin(plugin)
 }
 
-// newDefaultAuthManager creates a default authentication manager with all supported providers.
+// newDefaultAuthManager creates a default authentication manager.
+// OAuth authenticators have been removed; only the token store remains.
 func newDefaultAuthManager() *sdkAuth.Manager {
-	return sdkAuth.NewManager(
-		sdkAuth.GetTokenStore(),
-		sdkAuth.NewGeminiAuthenticator(),
-		sdkAuth.NewCodexAuthenticator(),
-		sdkAuth.NewClaudeAuthenticator(),
-		sdkAuth.NewQwenAuthenticator(),
-	)
+	return sdkAuth.NewManager(sdkAuth.GetTokenStore())
 }
 
 func (s *Service) ensureAuthUpdateQueue(ctx context.Context) {
@@ -296,8 +291,6 @@ func (s *Service) applyCoreAuthAddOrUpdate(ctx context.Context, auth *coreauth.A
 	// IMPORTANT: Update coreManager FIRST, before model registration.
 	// This ensures that configuration changes (proxy_url, prefix, etc.) take effect
 	// immediately for API calls, rather than waiting for model registration to complete.
-	// Model registration may involve network calls (e.g., FetchAntigravityModels) that
-	// could timeout if the new proxy_url is unreachable.
 	op := "register"
 	var err error
 	if existing, ok := s.coreManager.GetByID(auth.ID); ok {
@@ -415,27 +408,17 @@ func (s *Service) ensureExecutorsForAuthWithMode(a *coreauth.Auth, forceReplace 
 		s.coreManager.RegisterExecutor(executor.NewGeminiExecutor(s.cfg))
 	case "vertex":
 		s.coreManager.RegisterExecutor(executor.NewGeminiVertexExecutor(s.cfg))
-	case "gemini-cli":
-		s.coreManager.RegisterExecutor(executor.NewGeminiCLIExecutor(s.cfg))
 	case "aistudio":
 		if s.wsGateway != nil {
 			s.coreManager.RegisterExecutor(executor.NewAIStudioExecutor(s.cfg, a.ID, s.wsGateway))
 		}
 		return
-	case "antigravity":
-		s.coreManager.RegisterExecutor(executor.NewAntigravityExecutor(s.cfg))
 	case "claude":
 		s.coreManager.RegisterExecutor(executor.NewClaudeExecutor(s.cfg))
 	case "bedrock":
 		s.coreManager.RegisterExecutor(executor.NewBedrockExecutor(s.cfg))
 	case "opencode-go":
 		s.coreManager.RegisterExecutor(executor.NewOpenCodeGoExecutor(s.cfg))
-	case "qwen":
-		s.coreManager.RegisterExecutor(executor.NewQwenExecutor(s.cfg))
-	case "iflow":
-		s.coreManager.RegisterExecutor(executor.NewIFlowExecutor(s.cfg))
-	case "kimi":
-		s.coreManager.RegisterExecutor(executor.NewKimiExecutor(s.cfg))
 	default:
 		providerKey := strings.ToLower(strings.TrimSpace(a.Provider))
 		if providerKey == "" {
@@ -625,7 +608,6 @@ func (s *Service) Run(ctx context.Context) error {
 		s.cfgMu.Unlock()
 		if s.coreManager != nil {
 			s.coreManager.SetConfig(newCfg)
-			s.coreManager.SetOAuthModelAlias(newCfg.OAuthModelAlias)
 		}
 		s.rebindExecutors()
 	}
@@ -831,19 +813,6 @@ func (s *Service) registerModelsForAuth(ctx context.Context, a *coreauth.Auth) {
 	case "aistudio":
 		models = registry.GetAIStudioModels()
 		models = applyExcludedModels(models, excluded)
-	case "antigravity":
-		fetchCtx := ctx
-		if fetchCtx == nil {
-			// Model fetch can be called from service-owned refresh paths that have no
-			// request scope; fall back to a service-owned root context in that case.
-			fetchCtx = context.Background()
-		}
-		// Model registration should not be aborted by unrelated caller cancellation
-		// once the service has committed to refreshing the registry.
-		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(fetchCtx), 15*time.Second)
-		models = executor.FetchAntigravityModels(fetchCtx, a, s.cfg)
-		cancel()
-		models = applyExcludedModels(models, excluded)
 	case "claude":
 		models = registry.GetClaudeModels()
 		if entry := s.resolveConfigClaudeKey(a); entry != nil {
@@ -882,15 +851,6 @@ func (s *Service) registerModelsForAuth(ctx context.Context, a *coreauth.Auth) {
 				excluded = entry.ExcludedModels
 			}
 		}
-		models = applyExcludedModels(models, excluded)
-	case "qwen":
-		models = registry.GetQwenModels()
-		models = applyExcludedModels(models, excluded)
-	case "iflow":
-		models = registry.GetIFlowModels()
-		models = applyExcludedModels(models, excluded)
-	case "kimi":
-		models = registry.GetKimiModels()
 		models = applyExcludedModels(models, excluded)
 	default:
 		// Handle OpenAI-compatibility providers by name using config
@@ -979,9 +939,6 @@ func (s *Service) registerModelsForAuth(ctx context.Context, a *coreauth.Auth) {
 			key = strings.ToLower(strings.TrimSpace(a.Provider))
 		}
 		GlobalModelRegistry().RegisterClient(a.ID, key, applyModelPrefixes(models, a.Prefix, s.cfg != nil && s.cfg.ForceModelPrefix))
-		if provider == "antigravity" {
-			s.backfillAntigravityModels(a, models)
-		}
 		return
 	}
 
@@ -1186,67 +1143,12 @@ func (s *Service) resolveConfigCodexKey(auth *coreauth.Auth) *config.CodexKey {
 }
 
 func (s *Service) oauthExcludedModels(provider, authKind string) []string {
-	cfg := s.cfg
-	if cfg == nil {
-		return nil
-	}
-	authKindKey := strings.ToLower(strings.TrimSpace(authKind))
-	providerKey := strings.ToLower(strings.TrimSpace(provider))
-	if authKindKey == "apikey" {
-		return nil
-	}
-	return cfg.OAuthExcludedModels[providerKey]
+	// OAuth has been removed; all upstream access is via API key.
+	// Excluded-models logic previously applied only to OAuth accounts.
+	return nil
 }
 
-func (s *Service) backfillAntigravityModels(source *coreauth.Auth, primaryModels []*ModelInfo) {
-	if s == nil || s.coreManager == nil || len(primaryModels) == 0 {
-		return
-	}
 
-	sourceID := ""
-	if source != nil {
-		sourceID = strings.TrimSpace(source.ID)
-	}
-
-	reg := registry.GetGlobalRegistry()
-	for _, candidate := range s.coreManager.List() {
-		if candidate == nil || candidate.Disabled {
-			continue
-		}
-		candidateID := strings.TrimSpace(candidate.ID)
-		if candidateID == "" || candidateID == sourceID {
-			continue
-		}
-		if !strings.EqualFold(strings.TrimSpace(candidate.Provider), "antigravity") {
-			continue
-		}
-		if len(reg.GetModelsForClient(candidateID)) > 0 {
-			continue
-		}
-
-		authKind := strings.ToLower(strings.TrimSpace(candidate.Attributes["auth_kind"]))
-		if authKind == "" {
-			if kind, _ := candidate.AccountInfo(); strings.EqualFold(kind, "api_key") {
-				authKind = "apikey"
-			}
-		}
-		excluded := s.oauthExcludedModels("antigravity", authKind)
-		if candidate.Attributes != nil {
-			if val, ok := candidate.Attributes["excluded_models"]; ok && strings.TrimSpace(val) != "" {
-				excluded = strings.Split(val, ",")
-			}
-		}
-
-		models := applyExcludedModels(primaryModels, excluded)
-		models = applyOAuthModelAlias(s.cfg, "antigravity", authKind, models)
-		if len(models) == 0 {
-			continue
-		}
-
-		reg.RegisterClient(candidateID, "antigravity", applyModelPrefixes(models, candidate.Prefix, s.cfg != nil && s.cfg.ForceModelPrefix))
-		log.Debugf("antigravity models backfilled for auth %s using primary model list", candidateID)
-	}
-}
 
 func applyExcludedModels(models []*ModelInfo, excluded []string) []*ModelInfo {
 	if len(models) == 0 || len(excluded) == 0 {
@@ -1481,105 +1383,6 @@ func rewriteModelInfoName(name, oldID, newID string) string {
 }
 
 func applyOAuthModelAlias(cfg *config.Config, provider, authKind string, models []*ModelInfo) []*ModelInfo {
-	if cfg == nil || len(models) == 0 {
-		return models
-	}
-	channel := coreauth.OAuthModelAliasChannel(provider, authKind)
-	if channel == "" || len(cfg.OAuthModelAlias) == 0 {
-		return models
-	}
-	aliases := cfg.OAuthModelAlias[channel]
-	if len(aliases) == 0 {
-		return models
-	}
-
-	type aliasEntry struct {
-		alias string
-		fork  bool
-	}
-
-	forward := make(map[string][]aliasEntry, len(aliases))
-	for i := range aliases {
-		name := strings.TrimSpace(aliases[i].Name)
-		alias := strings.TrimSpace(aliases[i].Alias)
-		if name == "" || alias == "" {
-			continue
-		}
-		if strings.EqualFold(name, alias) {
-			continue
-		}
-		key := strings.ToLower(name)
-		forward[key] = append(forward[key], aliasEntry{alias: alias, fork: aliases[i].Fork})
-	}
-	if len(forward) == 0 {
-		return models
-	}
-
-	out := make([]*ModelInfo, 0, len(models))
-	seen := make(map[string]struct{}, len(models))
-	for _, model := range models {
-		if model == nil {
-			continue
-		}
-		id := strings.TrimSpace(model.ID)
-		if id == "" {
-			continue
-		}
-		key := strings.ToLower(id)
-		entries := forward[key]
-		if len(entries) == 0 {
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			seen[key] = struct{}{}
-			out = append(out, model)
-			continue
-		}
-
-		keepOriginal := false
-		for _, entry := range entries {
-			if entry.fork {
-				keepOriginal = true
-				break
-			}
-		}
-		if keepOriginal {
-			if _, exists := seen[key]; !exists {
-				seen[key] = struct{}{}
-				out = append(out, model)
-			}
-		}
-
-		addedAlias := false
-		for _, entry := range entries {
-			mappedID := strings.TrimSpace(entry.alias)
-			if mappedID == "" {
-				continue
-			}
-			if strings.EqualFold(mappedID, id) {
-				continue
-			}
-			aliasKey := strings.ToLower(mappedID)
-			if _, exists := seen[aliasKey]; exists {
-				continue
-			}
-			seen[aliasKey] = struct{}{}
-			clone := *model
-			clone.ID = mappedID
-			if clone.Name != "" {
-				clone.Name = rewriteModelInfoName(clone.Name, id, mappedID)
-			}
-			out = append(out, &clone)
-			addedAlias = true
-		}
-
-		if !keepOriginal && !addedAlias {
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			seen[key] = struct{}{}
-			out = append(out, model)
-		}
-	}
-	return out
+	// OAuth has been removed; model alias mapping no longer applies.
+	return models
 }

@@ -721,7 +721,6 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 		}
 		execReq := req
 		execReq.Model = rewriteModelForAuth(routeModel, auth)
-		execReq.Model = m.applyOAuthModelAlias(auth, execReq.Model)
 		execReq.Model = m.applyAPIKeyModelAlias(auth, execReq.Model)
 		resp, errExec := executor.Execute(execCtx, auth, execReq, opts)
 		result := Result{AuthID: auth.ID, Provider: provider, Model: routeModel, Success: errExec == nil}
@@ -781,7 +780,6 @@ func (m *Manager) executeCountMixedOnce(ctx context.Context, providers []string,
 		}
 		execReq := req
 		execReq.Model = rewriteModelForAuth(routeModel, auth)
-		execReq.Model = m.applyOAuthModelAlias(auth, execReq.Model)
 		execReq.Model = m.applyAPIKeyModelAlias(auth, execReq.Model)
 		resp, errExec := executor.CountTokens(execCtx, auth, execReq, opts)
 		if errExec != nil {
@@ -831,7 +829,6 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 		}
 		execReq := req
 		execReq.Model = rewriteModelForAuth(routeModel, auth)
-		execReq.Model = m.applyOAuthModelAlias(auth, execReq.Model)
 		execReq.Model = m.applyAPIKeyModelAlias(auth, execReq.Model)
 		streamResult, errStream := executor.ExecuteStream(execCtx, auth, execReq, opts)
 		if errStream != nil {
@@ -1076,9 +1073,6 @@ func (m *Manager) applyAPIKeyModelAlias(auth *Auth, requestedModel string) strin
 	// Return upstream model if found, otherwise return requested model.
 	if upstreamModel != "" {
 		return upstreamModel
-	}
-	if builtIn := resolveBuiltInCodexModelAlias(auth, requestedModel); builtIn != "" {
-		return builtIn
 	}
 	return requestedModel
 }
@@ -2785,4 +2779,76 @@ func (m *Manager) HttpRequest(ctx context.Context, auth *Auth, req *http.Request
 		return nil, &Error{Code: "provider_not_found", Message: "executor not registered for provider: " + providerKey}
 	}
 	return exec.HttpRequest(ctx, auth, req)
+}
+
+type modelAliasEntry interface {
+	GetName() string
+	GetAlias() string
+}
+
+func resolveBuiltInCodexModelAlias(auth *Auth, requestedModel string) string {
+	if auth == nil || !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
+		return ""
+	}
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return ""
+	}
+	parsed := thinking.ParseSuffix(requestedModel)
+	if !strings.EqualFold(strings.TrimSpace(parsed.ModelName), "codex-auto-review") {
+		return ""
+	}
+	if parsed.HasSuffix && parsed.RawSuffix != "" {
+		return "gpt-5.5" + "(" + parsed.RawSuffix + ")"
+	}
+	return "gpt-5.5"
+}
+
+func resolveModelAliasFromConfigModels(requestedModel string, models []modelAliasEntry) string {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return ""
+	}
+	if len(models) == 0 {
+		return ""
+	}
+
+	requestResult := thinking.ParseSuffix(requestedModel)
+	base := requestResult.ModelName
+	candidates := []string{base}
+	if base != requestedModel {
+		candidates = append(candidates, requestedModel)
+	}
+
+	preserveSuffix := func(resolved string) string {
+		resolved = strings.TrimSpace(resolved)
+		if resolved == "" {
+			return ""
+		}
+		if thinking.ParseSuffix(resolved).HasSuffix {
+			return resolved
+		}
+		if requestResult.HasSuffix && requestResult.RawSuffix != "" {
+			return resolved + "(" + requestResult.RawSuffix + ")"
+		}
+		return resolved
+	}
+
+	for _, candidate := range candidates {
+		for _, m := range models {
+			name := strings.TrimSpace(m.GetName())
+			alias := strings.TrimSpace(m.GetAlias())
+			if name == "" || alias == "" {
+				continue
+			}
+			if strings.EqualFold(name, candidate) {
+				return preserveSuffix(alias)
+			}
+			if strings.EqualFold(alias, candidate) {
+				return preserveSuffix(name)
+			}
+		}
+	}
+
+	return ""
 }

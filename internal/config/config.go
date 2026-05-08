@@ -21,10 +21,6 @@ import (
 const (
 	DefaultPanelGitHubRepository = "https://github.com/bjxg/aigw-panel"
 	DefaultPprofAddr             = "127.0.0.1:8316"
-	DefaultAutoUpdateChannel     = "main"
-	DefaultAutoUpdateRepository  = "https://github.com/bjxg/aigw-server"
-	DefaultAutoUpdateDockerImage = "ghcr.io/bjxg/aigw-server"
-	DefaultAutoUpdateUpdaterURL  = "http://aigw-server-updater:8320"
 
 	// EnvAuthPath overrides auth-dir with the path visible inside the running container/process.
 	EnvAuthPath = "AUTH_PATH"
@@ -56,18 +52,6 @@ type Config struct {
 
 	// RemoteManagement nests management-related options under 'remote-management'.
 	RemoteManagement RemoteManagement `yaml:"remote-management" json:"-"`
-
-	// AutoUpdate controls Docker-first update checks and updater sidecar integration.
-	AutoUpdate AutoUpdateConfig `yaml:"auto-update" json:"auto-update"`
-
-	// OAuthClients stores optional OAuth client credentials used by provider login flows.
-	// When empty, the runtime may fall back to environment variables (see oauth_clients.go).
-	OAuthClients OAuthClients `yaml:"oauth-clients" json:"-"`
-
-	// OAuthUserAgent sets the User-Agent header for OAuth HTTP requests.
-	// Some providers may reject the default Go HTTP client User-Agent.
-	// When empty, a browser-like default is used.
-	OAuthUserAgent string `yaml:"oauth-user-agent" json:"oauth-user-agent"`
 
 	// AuthDir is the directory where authentication token files are stored.
 	AuthDir string `yaml:"auth-dir" json:"-"`
@@ -150,17 +134,6 @@ type Config struct {
 
 	// AmpCode contains Amp CLI upstream configuration, management restrictions, and model mappings.
 	AmpCode AmpCode `yaml:"ampcode" json:"ampcode"`
-
-	// OAuthExcludedModels defines per-provider global model exclusions applied to OAuth/file-backed auth entries.
-	OAuthExcludedModels map[string][]string `yaml:"oauth-excluded-models,omitempty" json:"oauth-excluded-models,omitempty"`
-
-	// OAuthModelAlias defines global model name aliases for OAuth/file-backed auth channels.
-	// These aliases affect both model listing and model routing for supported channels:
-	// gemini-cli, vertex, aistudio, antigravity, claude, codex, qwen, iflow.
-	//
-	// NOTE: This does not apply to existing per-credential model alias features under:
-	// gemini-api-key, codex-api-key, claude-api-key, openai-compatibility, vertex-api-key, and ampcode.
-	OAuthModelAlias map[string][]OAuthModelAlias `yaml:"oauth-model-alias,omitempty" json:"oauth-model-alias,omitempty"`
 
 	// Payload defines default and override rules for provider payload parameters.
 	Payload PayloadConfig `yaml:"payload" json:"payload"`
@@ -310,20 +283,6 @@ type RemoteManagement struct {
 	PanelGitHubRepository string `yaml:"panel-github-repository"`
 }
 
-// AutoUpdateConfig holds Docker-first update check and sidecar settings.
-type AutoUpdateConfig struct {
-	// Enabled controls whether the management UI should automatically prompt for updates.
-	Enabled bool `yaml:"enabled" json:"enabled"`
-	// Channel can be auto, main, or dev. Auto infers from the running build metadata.
-	Channel string `yaml:"channel,omitempty" json:"channel,omitempty"`
-	// Repository is the GitHub repository used for branch commits and release notes.
-	Repository string `yaml:"repository,omitempty" json:"repository,omitempty"`
-	// DockerImage is the image repository pulled by the updater sidecar.
-	DockerImage string `yaml:"docker-image,omitempty" json:"docker-image,omitempty"`
-	// UpdaterURL is the internal URL of the independent updater sidecar.
-	UpdaterURL string `yaml:"updater-url,omitempty" json:"updater-url,omitempty"`
-}
-
 // QuotaExceeded defines the behavior when API quota limits are exceeded.
 // It provides configuration options for automatic failover mechanisms.
 type QuotaExceeded struct {
@@ -348,16 +307,6 @@ type RoutingConfig struct {
 
 	// PathRoutes maps URL path namespaces to channel groups.
 	PathRoutes []RoutingPathRoute `yaml:"path-routes,omitempty" json:"path-routes,omitempty"`
-}
-
-// OAuthModelAlias defines a model ID alias for a specific channel.
-// It maps the upstream model name (Name) to the client-visible alias (Alias).
-// When Fork is true, the alias is added as an additional model in listings while
-// keeping the original model ID available.
-type OAuthModelAlias struct {
-	Name  string `yaml:"name" json:"name"`
-	Alias string `yaml:"alias" json:"alias"`
-	Fork  bool   `yaml:"fork,omitempty" json:"fork,omitempty"`
 }
 
 // AmpModelMapping defines a model name mapping for Amp CLI requests.
@@ -741,16 +690,6 @@ func LoadConfig(configFile string) (*Config, error) {
 // If optional is true and the file is missing, it returns an empty Config.
 // If optional is true and the file is empty or invalid, it returns an empty Config.
 func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
-	// NOTE: Startup oauth-model-alias migration is intentionally disabled.
-	// Reason: avoid mutating config.yaml during server startup.
-	// Re-enable the block below if automatic startup migration is needed again.
-	// if migrated, err := MigrateOAuthModelAlias(configFile); err != nil {
-	// 	// Log warning but don't fail - config loading should still work
-	// 	fmt.Printf("Warning: oauth-model-alias migration failed: %v\n", err)
-	// } else if migrated {
-	// 	fmt.Println("Migrated oauth-model-mappings to oauth-model-alias")
-	// }
-
 	// Read the entire configuration file into memory.
 	data, err := os.ReadFile(configFile)
 	if err != nil {
@@ -789,11 +728,6 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.Pprof.Addr = DefaultPprofAddr
 	cfg.AmpCode.RestrictManagementToLocalhost = false // Default to false: API key auth is sufficient
 	cfg.RemoteManagement.PanelGitHubRepository = DefaultPanelGitHubRepository
-	cfg.AutoUpdate.Enabled = true
-	cfg.AutoUpdate.Channel = DefaultAutoUpdateChannel
-	cfg.AutoUpdate.Repository = DefaultAutoUpdateRepository
-	cfg.AutoUpdate.DockerImage = DefaultAutoUpdateDockerImage
-	cfg.AutoUpdate.UpdaterURL = DefaultAutoUpdateUpdaterURL
 	if err = yaml.Unmarshal(data, &cfg); err != nil {
 		if optional {
 			// In cloud deploy mode, if YAML parsing fails, return empty config instead of error.
@@ -837,7 +771,6 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	if cfg.RemoteManagement.PanelGitHubRepository == "" {
 		cfg.RemoteManagement.PanelGitHubRepository = DefaultPanelGitHubRepository
 	}
-	cfg.SanitizeAutoUpdate()
 
 	cfg.Pprof.Addr = strings.TrimSpace(cfg.Pprof.Addr)
 	if cfg.Pprof.Addr == "" {
@@ -889,12 +822,6 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 
 	// Sanitize OpenAI compatibility providers: drop entries without base-url
 	cfg.SanitizeOpenAICompatibility()
-
-	// Normalize OAuth provider model exclusion map.
-	cfg.OAuthExcludedModels = NormalizeOAuthExcludedModels(cfg.OAuthExcludedModels)
-
-	// Normalize global OAuth model name aliases.
-	cfg.SanitizeOAuthModelAlias()
 
 	// Normalize routing configuration.
 	cfg.SanitizeRouting()
@@ -987,72 +914,6 @@ func payloadRawString(value any) ([]byte, bool) {
 	default:
 		return nil, false
 	}
-}
-
-// SanitizeAutoUpdate normalizes Docker update settings while preserving an explicit disabled flag.
-func (cfg *Config) SanitizeAutoUpdate() {
-	if cfg == nil {
-		return
-	}
-	channel := strings.ToLower(strings.TrimSpace(cfg.AutoUpdate.Channel))
-	switch channel {
-	case "":
-		cfg.AutoUpdate.Channel = DefaultAutoUpdateChannel
-	case "main", "dev", "auto":
-		cfg.AutoUpdate.Channel = channel
-	default:
-		cfg.AutoUpdate.Channel = DefaultAutoUpdateChannel
-	}
-	cfg.AutoUpdate.Repository = strings.TrimSpace(cfg.AutoUpdate.Repository)
-	if cfg.AutoUpdate.Repository == "" {
-		cfg.AutoUpdate.Repository = DefaultAutoUpdateRepository
-	}
-	cfg.AutoUpdate.DockerImage = strings.TrimSpace(cfg.AutoUpdate.DockerImage)
-	if cfg.AutoUpdate.DockerImage == "" {
-		cfg.AutoUpdate.DockerImage = DefaultAutoUpdateDockerImage
-	}
-	cfg.AutoUpdate.UpdaterURL = strings.TrimSpace(cfg.AutoUpdate.UpdaterURL)
-	if cfg.AutoUpdate.UpdaterURL == "" {
-		cfg.AutoUpdate.UpdaterURL = DefaultAutoUpdateUpdaterURL
-	}
-}
-
-// SanitizeOAuthModelAlias normalizes and deduplicates global OAuth model name aliases.
-// It trims whitespace, normalizes channel keys to lower-case, drops empty entries,
-// allows multiple aliases per upstream name, and ensures aliases are unique within each channel.
-func (cfg *Config) SanitizeOAuthModelAlias() {
-	if cfg == nil || len(cfg.OAuthModelAlias) == 0 {
-		return
-	}
-	out := make(map[string][]OAuthModelAlias, len(cfg.OAuthModelAlias))
-	for rawChannel, aliases := range cfg.OAuthModelAlias {
-		channel := strings.ToLower(strings.TrimSpace(rawChannel))
-		if channel == "" || len(aliases) == 0 {
-			continue
-		}
-		seenAlias := make(map[string]struct{}, len(aliases))
-		clean := make([]OAuthModelAlias, 0, len(aliases))
-		for _, entry := range aliases {
-			name := strings.TrimSpace(entry.Name)
-			alias := strings.TrimSpace(entry.Alias)
-			if name == "" || alias == "" {
-				continue
-			}
-			if strings.EqualFold(name, alias) {
-				continue
-			}
-			aliasKey := strings.ToLower(alias)
-			if _, ok := seenAlias[aliasKey]; ok {
-				continue
-			}
-			seenAlias[aliasKey] = struct{}{}
-			clean = append(clean, OAuthModelAlias{Name: name, Alias: alias, Fork: entry.Fork})
-		}
-		if len(clean) > 0 {
-			out[channel] = clean
-		}
-	}
-	cfg.OAuthModelAlias = out
 }
 
 // SanitizeOpenAICompatibility removes OpenAI-compatibility provider entries that are
@@ -1248,30 +1109,6 @@ func NormalizeExcludedModels(models []string) []string {
 	return out
 }
 
-// NormalizeOAuthExcludedModels cleans provider -> excluded models mappings by normalizing provider keys
-// and applying model exclusion normalization to each entry.
-func NormalizeOAuthExcludedModels(entries map[string][]string) map[string][]string {
-	if len(entries) == 0 {
-		return nil
-	}
-	out := make(map[string][]string, len(entries))
-	for provider, models := range entries {
-		key := strings.ToLower(strings.TrimSpace(provider))
-		if key == "" {
-			continue
-		}
-		normalized := NormalizeExcludedModels(models)
-		if len(normalized) == 0 {
-			continue
-		}
-		out[key] = normalized
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
 // hashSecret hashes the given secret using bcrypt.
 func hashSecret(secret string) (string, error) {
 	// Use default cost for simplicity.
@@ -1324,9 +1161,6 @@ func SaveConfigPreserveComments(configFile string, cfg *Config) error {
 	removeLegacyOpenAICompatAPIKeys(original.Content[0])
 	removeLegacyAmpKeys(original.Content[0])
 	removeLegacyGenerativeLanguageKeys(original.Content[0])
-
-	pruneMappingToGeneratedKeys(original.Content[0], generated.Content[0], "oauth-excluded-models")
-	pruneMappingToGeneratedKeys(original.Content[0], generated.Content[0], "oauth-model-alias")
 
 	// Merge generated into original in-place, preserving comments/order of existing nodes.
 	mergeMappingPreserve(original.Content[0], generated.Content[0])
@@ -1911,16 +1745,6 @@ func pruneMappingToGeneratedKeys(dstRoot, srcRoot *yaml.Node, key string) {
 	}
 	srcIdx := findMapKeyIndex(srcRoot, key)
 	if srcIdx < 0 {
-		// Keep an explicit empty mapping for oauth-model-alias when it was previously present.
-		//
-		// Rationale: LoadConfig runs MigrateOAuthModelAlias before unmarshalling. If the
-		// oauth-model-alias key is missing, migration will add the default antigravity aliases.
-		// When users delete the last channel from oauth-model-alias via the management API,
-		// we want that deletion to persist across hot reloads and restarts.
-		if key == "oauth-model-alias" {
-			dstRoot.Content[dstIdx+1] = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-			return
-		}
 		removeMapKey(dstRoot, key)
 		return
 	}

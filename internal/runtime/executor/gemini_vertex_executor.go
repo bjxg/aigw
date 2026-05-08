@@ -325,14 +325,14 @@ func (e *GeminiVertexExecutor) executeWithServiceAccount(ctx context.Context, au
 		originalTranslated := sdktranslator.TranslateRequest(from, to, baseModel, originalPayload, false)
 		body = sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, false)
 
-		body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+		body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 		if err != nil {
 			return resp, err
 		}
 
 		body = fixGeminiImageAspectRatio(baseModel, body)
 		requestedModel := payloadRequestedModel(opts, req.Model)
-		body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+		body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 		body, _ = sjson.SetBytes(body, "model", baseModel)
 	}
 
@@ -441,14 +441,14 @@ func (e *GeminiVertexExecutor) executeWithAPIKey(ctx context.Context, auth *clip
 	originalTranslated := sdktranslator.TranslateRequest(from, to, baseModel, originalPayload, false)
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, false)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return resp, err
 	}
 
 	body = fixGeminiImageAspectRatio(baseModel, body)
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 
 	action := getVertexAction(baseModel, false)
@@ -547,14 +547,14 @@ func (e *GeminiVertexExecutor) executeStreamWithServiceAccount(ctx context.Conte
 	originalTranslated := sdktranslator.TranslateRequest(from, to, baseModel, originalPayload, true)
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, true)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return nil, err
 	}
 
 	body = fixGeminiImageAspectRatio(baseModel, body)
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 
 	action := getVertexAction(baseModel, true)
@@ -672,14 +672,14 @@ func (e *GeminiVertexExecutor) executeStreamWithAPIKey(ctx context.Context, auth
 	originalTranslated := sdktranslator.TranslateRequest(from, to, baseModel, originalPayload, true)
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, true)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return nil, err
 	}
 
 	body = fixGeminiImageAspectRatio(baseModel, body)
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 
 	action := getVertexAction(baseModel, true)
@@ -788,7 +788,7 @@ func (e *GeminiVertexExecutor) countTokensWithServiceAccount(ctx context.Context
 
 	translatedReq := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, false)
 
-	translatedReq, err := thinking.ApplyThinking(translatedReq, req.Model, from.String(), to.String(), e.Identifier())
+	translatedReq, err := thinking.ApplyThinking(translatedReq, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return cliproxyexecutor.Response{}, err
 	}
@@ -872,7 +872,7 @@ func (e *GeminiVertexExecutor) countTokensWithAPIKey(ctx context.Context, auth *
 
 	translatedReq := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, false)
 
-	translatedReq, err := thinking.ApplyThinking(translatedReq, req.Model, from.String(), to.String(), e.Identifier())
+	translatedReq, err := thinking.ApplyThinking(translatedReq, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return cliproxyexecutor.Response{}, err
 	}

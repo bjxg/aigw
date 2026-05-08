@@ -17,7 +17,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/api/handlers"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v6/sdk/translator"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -89,16 +88,16 @@ func (h *OpenAIImagesAPIHandler) executeImages(c *gin.Context, rawJSON []byte, a
 				return
 			}
 		}
-		resp, err := h.AuthManager.Execute(cliCtx, []string{"codex"}, coreexecutor.Request{
-			Model:   "",
-			Payload: execPayload,
-			Format:  sdktranslator.FromString("openai"),
-		}, coreexecutor.Options{
-			Alt:             alt,
-			OriginalRequest: rawJSON,
-			SourceFormat:    sdktranslator.FromString("openai"),
-			Metadata:        cloneImageExecutionMetadata(meta),
-		})
+	resp, err := h.AuthManager.Execute(cliCtx, []string{"codex"}, coreexecutor.Request{
+		Model:   "",
+		Payload: execPayload,
+		Format:  "openai",
+	}, coreexecutor.Options{
+		Alt:             alt,
+		OriginalRequest: rawJSON,
+		SourceFormat:    "openai",
+		Metadata:        cloneImageExecutionMetadata(meta),
+	})
 		if err != nil {
 			status := http.StatusBadGateway
 			if statusErr, ok := err.(coreexecutor.StatusError); ok && statusErr.StatusCode() > 0 {

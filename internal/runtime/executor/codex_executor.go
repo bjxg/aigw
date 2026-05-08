@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	codexauth "github.com/router-for-me/CLIProxyAPI/v6/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/misc"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/thinking"
@@ -225,13 +224,13 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 	originalTranslated := sdktranslator.TranslateRequest(from, to, baseModel, originalPayload, false)
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, false)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return resp, err
 	}
 
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 	body = ensureTranslatedCodexModel(body, baseModel)
 	body, _ = sjson.SetBytes(body, "stream", true)
 	body, _ = sjson.DeleteBytes(body, "previous_response_id")
@@ -352,13 +351,13 @@ func (e *CodexExecutor) executeCompact(ctx context.Context, auth *cliproxyauth.A
 	originalTranslated := sdktranslator.TranslateRequest(from, to, baseModel, originalPayload, false)
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, false)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return resp, err
 	}
 
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 	body = ensureTranslatedCodexModel(body, baseModel)
 	body, _ = sjson.DeleteBytes(body, "stream")
 
@@ -444,13 +443,13 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	originalTranslated := sdktranslator.TranslateRequest(from, to, baseModel, originalPayload, true)
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, true)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return nil, err
 	}
 
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 	body, _ = sjson.DeleteBytes(body, "previous_response_id")
 	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
 	body, _ = sjson.DeleteBytes(body, "safety_identifier")
@@ -558,7 +557,7 @@ func (e *CodexExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth
 	to := sdktranslator.FromString("codex")
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, false)
 
-	body, err := thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err := thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return cliproxyexecutor.Response{}, err
 	}
@@ -715,37 +714,6 @@ func (e *CodexExecutor) Refresh(ctx context.Context, auth *cliproxyauth.Auth) (*
 	if auth == nil {
 		return nil, statusErr{code: 500, msg: "codex executor: auth is nil"}
 	}
-	var refreshToken string
-	if auth.Metadata != nil {
-		if v, ok := auth.Metadata["refresh_token"].(string); ok && v != "" {
-			refreshToken = v
-		}
-	}
-	if refreshToken == "" {
-		return auth, nil
-	}
-	svc := codexauth.NewCodexAuth(e.cfg)
-	td, err := svc.RefreshTokensWithRetry(ctx, refreshToken, 3)
-	if err != nil {
-		return nil, err
-	}
-	if auth.Metadata == nil {
-		auth.Metadata = make(map[string]any)
-	}
-	auth.Metadata["id_token"] = td.IDToken
-	auth.Metadata["access_token"] = td.AccessToken
-	if td.RefreshToken != "" {
-		auth.Metadata["refresh_token"] = td.RefreshToken
-	}
-	if td.AccountID != "" {
-		auth.Metadata["account_id"] = td.AccountID
-	}
-	auth.Metadata["email"] = td.Email
-	// Use unified key in files
-	auth.Metadata["expired"] = td.Expire
-	auth.Metadata["type"] = "codex"
-	now := time.Now().Format(time.RFC3339)
-	auth.Metadata["last_refresh"] = now
 	return auth, nil
 }
 

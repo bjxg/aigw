@@ -182,9 +182,8 @@ func (h *Handler) Middleware() gin.HandlerFunc {
 		c.Header("X-CPA-VERSION", buildinfo.Version)
 		c.Header("X-CPA-COMMIT", buildinfo.Commit)
 		c.Header("X-CPA-BUILD-DATE", buildinfo.BuildDate)
-		currentUIVersion, currentUICommit := h.currentFrontendState()
-		c.Header("X-CPA-UI-VERSION", currentUIVersion)
-		c.Header("X-CPA-UI-COMMIT", currentUICommit)
+		c.Header("X-CPA-UI-VERSION", "")
+		c.Header("X-CPA-UI-COMMIT", "")
 
 		clientIP := c.ClientIP()
 		localClient := clientIP == "127.0.0.1" || clientIP == "::1"

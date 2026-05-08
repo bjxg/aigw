@@ -1,5 +1,7 @@
 # Binaries
 cli-proxy-api
+aigw-server
+server
 *.exe
 
 # Configuration
@@ -71,6 +73,7 @@ _bmad-output/*
 
 # Local backups / runtime data
 config.yaml.pre-sqlite-migration
+config.yaml.pre-routing-sqlite-migration
 data/*
 
 # macOS

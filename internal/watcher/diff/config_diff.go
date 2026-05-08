@@ -239,12 +239,7 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 		changes = append(changes, fmt.Sprintf("ampcode.upstream-api-keys: updated (%d -> %d entries)", oldUpstreamAPIKeysCount, newUpstreamAPIKeysCount))
 	}
 
-	if entries, _ := DiffOAuthExcludedModelChanges(oldCfg.OAuthExcludedModels, newCfg.OAuthExcludedModels); len(entries) > 0 {
-		changes = append(changes, entries...)
-	}
-	if entries, _ := DiffOAuthModelAliasChanges(oldCfg.OAuthModelAlias, newCfg.OAuthModelAlias); len(entries) > 0 {
-		changes = append(changes, entries...)
-	}
+
 
 	// Remote management (never print the key)
 	if oldCfg.RemoteManagement.AllowRemote != newCfg.RemoteManagement.AllowRemote {

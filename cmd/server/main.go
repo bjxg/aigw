@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -22,11 +21,8 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/cmd"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/managementasset"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/misc"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/store"
-	_ "github.com/router-for-me/CLIProxyAPI/v6/internal/translator"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/tui"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v6/sdk/auth"
@@ -40,19 +36,7 @@ var (
 
 type cliModeOptions struct {
 	vertexImport     string
-	projectID        string
 	password         string
-	login            bool
-	codexLogin       bool
-	codexDeviceLogin bool
-	claudeLogin      bool
-	qwenLogin        bool
-	iflowLogin       bool
-	iflowCookie      bool
-	antigravityLogin bool
-	kimiLogin        bool
-	tuiMode          bool
-	standalone       bool
 	isCloudDeploy    bool
 	configFileExists bool
 }
@@ -69,42 +53,14 @@ func main() {
 	fmt.Printf("aigw-server Version: %s, Commit: %s, BuiltAt: %s\n", buildinfo.Version, buildinfo.Commit, buildinfo.BuildDate)
 
 	// Command-line flags to control the application's behavior.
-	var login bool
-	var codexLogin bool
-	var codexDeviceLogin bool
-	var claudeLogin bool
-	var qwenLogin bool
-	var iflowLogin bool
-	var iflowCookie bool
-	var noBrowser bool
-	var oauthCallbackPort int
-	var antigravityLogin bool
-	var kimiLogin bool
-	var projectID string
 	var vertexImport string
 	var configPath string
 	var password string
-	var tuiMode bool
-	var standalone bool
 
 	// Define command-line flags for different operation modes.
-	flag.BoolVar(&login, "login", false, "Login Google Account")
-	flag.BoolVar(&codexLogin, "codex-login", false, "Login to Codex using OAuth")
-	flag.BoolVar(&codexDeviceLogin, "codex-device-login", false, "Login to Codex using device code flow")
-	flag.BoolVar(&claudeLogin, "claude-login", false, "Login to Claude using OAuth")
-	flag.BoolVar(&qwenLogin, "qwen-login", false, "Login to Qwen using OAuth")
-	flag.BoolVar(&iflowLogin, "iflow-login", false, "Login to iFlow using OAuth")
-	flag.BoolVar(&iflowCookie, "iflow-cookie", false, "Login to iFlow using Cookie")
-	flag.BoolVar(&noBrowser, "no-browser", false, "Don't open browser automatically for OAuth")
-	flag.IntVar(&oauthCallbackPort, "oauth-callback-port", 0, "Override OAuth callback port (defaults to provider-specific port)")
-	flag.BoolVar(&antigravityLogin, "antigravity-login", false, "Login to Antigravity using OAuth")
-	flag.BoolVar(&kimiLogin, "kimi-login", false, "Login to Kimi using OAuth")
-	flag.StringVar(&projectID, "project_id", "", "Project ID (Gemini only, not required)")
 	flag.StringVar(&configPath, "config", DefaultConfigPath, "Configure File Path")
 	flag.StringVar(&vertexImport, "vertex-import", "", "Import Vertex service account key JSON file")
 	flag.StringVar(&password, "password", "", "")
-	flag.BoolVar(&tuiMode, "tui", false, "Start with terminal management UI")
-	flag.BoolVar(&standalone, "standalone", false, "In TUI mode, start an embedded local server")
 
 	flag.CommandLine.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -446,13 +402,6 @@ func main() {
 	} else {
 		cfg.AuthDir = resolvedAuthDir
 	}
-	managementasset.SetCurrentConfig(cfg)
-
-	// Create login options to be used in authentication flows.
-	options := &cmd.LoginOptions{
-		NoBrowser:    noBrowser,
-		CallbackPort: oauthCallbackPort,
-	}
 
 	// Register the shared token store once so all components use the same persistence backend.
 	if usePostgresStore {
@@ -468,51 +417,20 @@ func main() {
 	// Register built-in access providers before constructing services.
 	configaccess.Register(&cfg.SDKConfig)
 
-	runSelectedMode(cfg, configFilePath, options, cliModeOptions{
+	runSelectedMode(cfg, configFilePath, password, cliModeOptions{
 		vertexImport:     vertexImport,
-		projectID:        projectID,
 		password:         password,
-		login:            login,
-		codexLogin:       codexLogin,
-		codexDeviceLogin: codexDeviceLogin,
-		claudeLogin:      claudeLogin,
-		qwenLogin:        qwenLogin,
-		iflowLogin:       iflowLogin,
-		iflowCookie:      iflowCookie,
-		antigravityLogin: antigravityLogin,
-		kimiLogin:        kimiLogin,
-		tuiMode:          tuiMode,
-		standalone:       standalone,
 		isCloudDeploy:    isCloudDeploy,
 		configFileExists: configFileExists,
 	})
 }
 
-func runSelectedMode(cfg *config.Config, configFilePath string, options *cmd.LoginOptions, mode cliModeOptions) {
-	switch {
-	case mode.vertexImport != "":
+func runSelectedMode(cfg *config.Config, configFilePath string, password string, mode cliModeOptions) {
+	if mode.vertexImport != "" {
 		cmd.DoVertexImport(cfg, mode.vertexImport)
-	case mode.login:
-		cmd.DoLogin(cfg, mode.projectID, options)
-	case mode.antigravityLogin:
-		cmd.DoAntigravityLogin(cfg, options)
-	case mode.codexLogin:
-		cmd.DoCodexLogin(cfg, options)
-	case mode.codexDeviceLogin:
-		cmd.DoCodexDeviceLogin(cfg, options)
-	case mode.claudeLogin:
-		cmd.DoClaudeLogin(cfg, options)
-	case mode.qwenLogin:
-		cmd.DoQwenLogin(cfg, options)
-	case mode.iflowLogin:
-		cmd.DoIFlowLogin(cfg, options)
-	case mode.iflowCookie:
-		cmd.DoIFlowCookieAuth(cfg, options)
-	case mode.kimiLogin:
-		cmd.DoKimiLogin(cfg, options)
-	default:
-		runServiceMode(cfg, configFilePath, mode.password, mode)
+		return
 	}
+	runServiceMode(cfg, configFilePath, password, mode)
 }
 
 func runServiceMode(cfg *config.Config, configFilePath, password string, mode cliModeOptions) {
@@ -520,82 +438,5 @@ func runServiceMode(cfg *config.Config, configFilePath, password string, mode cl
 		cmd.WaitForCloudDeploy()
 		return
 	}
-	if !mode.tuiMode {
-		managementasset.StartAutoUpdater(context.Background(), configFilePath)
-		cmd.StartService(cfg, configFilePath, password)
-		return
-	}
-	if mode.standalone {
-		runStandaloneTUI(cfg, configFilePath, password)
-		return
-	}
-	if errRun := tui.Run(cfg.Port, password, nil, os.Stdout); errRun != nil {
-		fmt.Fprintf(os.Stderr, "TUI error: %v\n", errRun)
-	}
-}
-
-func runStandaloneTUI(cfg *config.Config, configFilePath, password string) {
-	managementasset.StartAutoUpdater(context.Background(), configFilePath)
-	hook := tui.NewLogHook(2000)
-	hook.SetFormatter(&logging.LogFormatter{})
-	log.AddHook(hook)
-
-	origStdout := os.Stdout
-	origStderr := os.Stderr
-	origLogOutput := log.StandardLogger().Out
-	log.SetOutput(io.Discard)
-
-	devNull, errOpenDevNull := os.Open(os.DevNull)
-	if errOpenDevNull == nil {
-		os.Stdout = devNull
-		os.Stderr = devNull
-	}
-
-	restoreIO := func() {
-		os.Stdout = origStdout
-		os.Stderr = origStderr
-		log.SetOutput(origLogOutput)
-		if devNull != nil {
-			_ = devNull.Close()
-		}
-	}
-
-	localMgmtPassword := fmt.Sprintf("tui-%d-%d", os.Getpid(), time.Now().UnixNano())
-	if password == "" {
-		password = localMgmtPassword
-	}
-
-	cancel, done := cmd.StartServiceBackground(cfg, configFilePath, password)
-
-	client := tui.NewClient(cfg.Port, password)
-	ready := false
-	backoff := 100 * time.Millisecond
-	for i := 0; i < 30; i++ {
-		if _, errGetConfig := client.GetConfig(); errGetConfig == nil {
-			ready = true
-			break
-		}
-		time.Sleep(backoff)
-		if backoff < time.Second {
-			backoff = time.Duration(float64(backoff) * 1.5)
-		}
-	}
-
-	if !ready {
-		restoreIO()
-		cancel()
-		<-done
-		fmt.Fprintf(os.Stderr, "TUI error: embedded server is not ready\n")
-		return
-	}
-
-	if errRun := tui.Run(cfg.Port, password, hook, origStdout); errRun != nil {
-		restoreIO()
-		fmt.Fprintf(os.Stderr, "TUI error: %v\n", errRun)
-	} else {
-		restoreIO()
-	}
-
-	cancel()
-	<-done
+	cmd.StartService(cfg, configFilePath, password)
 }

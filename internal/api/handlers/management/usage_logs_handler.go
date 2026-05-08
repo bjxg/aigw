@@ -263,9 +263,11 @@ func (h *Handler) buildNameMaps() (keyNameMap, channelNameMap, authIndexChannelM
 					channelNameMap[source] = channel
 				}
 			}
-			if email := strings.TrimSpace(authEmail(auth)); email != "" {
+		if auth.Attributes != nil {
+			if email := strings.TrimSpace(auth.Attributes["email"]); email != "" {
 				channelNameMap[email] = channel
 			}
+		}
 		}
 	}
 
@@ -703,9 +705,18 @@ func (h *Handler) GetAuthFileTrend(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "auth_index is required"})
 		return
 	}
-	if h != nil && h.authManager != nil && h.authByIndex(authIndex) == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "auth not found"})
-		return
+	if h != nil && h.authManager != nil {
+		found := false
+		for _, a := range h.authManager.List() {
+			if a.ID == authIndex {
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.JSON(http.StatusNotFound, gin.H{"error": "auth not found"})
+			return
+		}
 	}
 
 	days := intQueryDefault(c, "days", 7)

@@ -182,10 +182,6 @@ func sanitizeConfigForAPI(cfg *config.Config) *config.Config {
 		copy.APIKeyEntries[i].Name = maskName(copy.APIKeyEntries[i].Name)
 	}
 
-	// ── OAuth model alias & excluded models (internal mapping, no reason to expose) ──
-	copy.OAuthModelAlias = nil
-	copy.OAuthExcludedModels = nil
-
 	// ── Global proxy URL ────────────────────────────────────────────────────
 	copy.ProxyURL = maskBaseURL(copy.ProxyURL)
 	for i := range copy.ProxyPool {

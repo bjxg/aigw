@@ -51,7 +51,6 @@ import (
 )
 
 const (
-	oauthCallbackSuccessHTML = `<html><head><meta charset="utf-8"><title>Authentication successful</title><script>setTimeout(function(){window.close();},5000);</script></head><body><h1>Authentication successful!</h1><p>You can close this window.</p><p>This window will close automatically in 5 seconds.</p></body></html>`
 	// Main API requests can legitimately spend several minutes waiting on upstream model execution.
 	// Long-lived SSE and websocket routes explicitly clear this deadline before streaming/upgrading.
 	mainAPIServerWriteTimeout = 10 * time.Minute
@@ -470,79 +469,6 @@ func (s *Server) setupRoutes() {
 	})
 	s.engine.POST("/v1internal:method", geminiCLIHandlers.CLIHandler)
 
-	// OAuth callback endpoints (reuse main server port)
-	// These endpoints receive provider redirects and persist
-	// the short-lived code/state for the waiting goroutine.
-	s.engine.GET("/anthropic/callback", func(c *gin.Context) {
-		code := c.Query("code")
-		state := c.Query("state")
-		errStr := c.Query("error")
-		if errStr == "" {
-			errStr = c.Query("error_description")
-		}
-		if state != "" {
-			_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "anthropic", state, code, errStr)
-		}
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.String(http.StatusOK, oauthCallbackSuccessHTML)
-	})
-
-	s.engine.GET("/codex/callback", func(c *gin.Context) {
-		code := c.Query("code")
-		state := c.Query("state")
-		errStr := c.Query("error")
-		if errStr == "" {
-			errStr = c.Query("error_description")
-		}
-		if state != "" {
-			_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "codex", state, code, errStr)
-		}
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.String(http.StatusOK, oauthCallbackSuccessHTML)
-	})
-
-	s.engine.GET("/google/callback", func(c *gin.Context) {
-		code := c.Query("code")
-		state := c.Query("state")
-		errStr := c.Query("error")
-		if errStr == "" {
-			errStr = c.Query("error_description")
-		}
-		if state != "" {
-			_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "gemini", state, code, errStr)
-		}
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.String(http.StatusOK, oauthCallbackSuccessHTML)
-	})
-
-	s.engine.GET("/iflow/callback", func(c *gin.Context) {
-		code := c.Query("code")
-		state := c.Query("state")
-		errStr := c.Query("error")
-		if errStr == "" {
-			errStr = c.Query("error_description")
-		}
-		if state != "" {
-			_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "iflow", state, code, errStr)
-		}
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.String(http.StatusOK, oauthCallbackSuccessHTML)
-	})
-
-	s.engine.GET("/antigravity/callback", func(c *gin.Context) {
-		code := c.Query("code")
-		state := c.Query("state")
-		errStr := c.Query("error")
-		if errStr == "" {
-			errStr = c.Query("error_description")
-		}
-		if state != "" {
-			_, _ = managementHandlers.WriteOAuthCallbackFileForPendingSession(s.cfg.AuthDir, "antigravity", state, code, errStr)
-		}
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.String(http.StatusOK, oauthCallbackSuccessHTML)
-	})
-
 	// Management routes are registered lazily by registerManagementRoutes when a secret is configured.
 }
 
@@ -625,25 +551,11 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.POST("/usage/import", s.mgmt.ImportUsageStatistics)
 		mgmt.GET("/usage/logs", s.mgmt.GetUsageLogs)
 		mgmt.GET("/usage/logs/:id/content", s.mgmt.GetLogContent)
-		mgmt.GET("/usage/auth-file-group-trend", s.mgmt.GetAuthFileGroupTrend)
-		mgmt.GET("/usage/auth-file-trend", s.mgmt.GetAuthFileTrend)
-		mgmt.POST("/usage/auth-file-quota-snapshot", s.mgmt.PostAuthFileQuotaSnapshot)
 		mgmt.GET("/usage/chart-data", s.mgmt.GetUsageChartData)
 		mgmt.GET("/usage/entity-stats", s.mgmt.GetEntityUsageStats)
 		mgmt.GET("/config", s.mgmt.GetConfig)
 		mgmt.GET("/config.yaml", s.mgmt.GetConfigYAML)
 		mgmt.PUT("/config.yaml", s.mgmt.PutConfigYAML)
-		mgmt.GET("/latest-version", s.mgmt.GetLatestVersion)
-		mgmt.GET("/update/check", s.mgmt.CheckUpdate)
-		mgmt.GET("/update/current", s.mgmt.GetCurrentUpdateState)
-		mgmt.GET("/update/progress", s.mgmt.GetUpdateProgress)
-		mgmt.POST("/update/apply", s.mgmt.ApplyUpdate)
-		mgmt.GET("/auto-update/enabled", s.mgmt.GetAutoUpdateEnabled)
-		mgmt.PUT("/auto-update/enabled", s.mgmt.PutAutoUpdateEnabled)
-		mgmt.PATCH("/auto-update/enabled", s.mgmt.PutAutoUpdateEnabled)
-		mgmt.GET("/auto-update/channel", s.mgmt.GetAutoUpdateChannel)
-		mgmt.PUT("/auto-update/channel", s.mgmt.PutAutoUpdateChannel)
-		mgmt.PATCH("/auto-update/channel", s.mgmt.PutAutoUpdateChannel)
 
 		mgmt.GET("/debug", s.mgmt.GetDebug)
 		mgmt.PUT("/debug", s.mgmt.PutDebug)
@@ -673,7 +585,7 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/proxy-pool", s.mgmt.PutProxyPool)
 		mgmt.POST("/proxy-pool/check", s.mgmt.PostProxyPoolCheck)
 
-		mgmt.POST("/api-call", s.mgmt.APICall)
+
 
 		mgmt.GET("/quota-exceeded/switch-project", s.mgmt.GetSwitchProject)
 		mgmt.PUT("/quota-exceeded/switch-project", s.mgmt.PutSwitchProject)
@@ -783,39 +695,8 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PATCH("/vertex-api-key", s.mgmt.PatchVertexCompatKey)
 		mgmt.DELETE("/vertex-api-key", s.mgmt.DeleteVertexCompatKey)
 
-		mgmt.GET("/oauth-excluded-models", s.mgmt.GetOAuthExcludedModels)
-		mgmt.PUT("/oauth-excluded-models", s.mgmt.PutOAuthExcludedModels)
-		mgmt.PATCH("/oauth-excluded-models", s.mgmt.PatchOAuthExcludedModels)
-		mgmt.DELETE("/oauth-excluded-models", s.mgmt.DeleteOAuthExcludedModels)
 
-		mgmt.GET("/oauth-model-alias", s.mgmt.GetOAuthModelAlias)
-		mgmt.PUT("/oauth-model-alias", s.mgmt.PutOAuthModelAlias)
-		mgmt.PATCH("/oauth-model-alias", s.mgmt.PatchOAuthModelAlias)
-		mgmt.DELETE("/oauth-model-alias", s.mgmt.DeleteOAuthModelAlias)
-
-		mgmt.GET("/auth-files", s.mgmt.ListAuthFiles)
-		mgmt.GET("/auth-files/models", s.mgmt.GetAuthFileModels)
 		mgmt.GET("/model-definitions/:channel", s.mgmt.GetStaticModelDefinitions)
-		mgmt.GET("/image-generation/channels", s.mgmt.ListImageGenerationChannels)
-		mgmt.POST("/image-generation/test", s.mgmt.PostImageGenerationTest)
-		mgmt.GET("/image-generation/test/:task_id", s.mgmt.GetImageGenerationTestTask)
-		mgmt.GET("/auth-files/download", s.mgmt.DownloadAuthFile)
-		mgmt.POST("/auth-files", s.mgmt.UploadAuthFile)
-		mgmt.DELETE("/auth-files", s.mgmt.DeleteAuthFile)
-		mgmt.PATCH("/auth-files/status", s.mgmt.PatchAuthFileStatus)
-		mgmt.PATCH("/auth-files/fields", s.mgmt.PatchAuthFileFields)
-		mgmt.POST("/vertex/import", s.mgmt.ImportVertexCredential)
-
-		mgmt.GET("/anthropic-auth-url", s.mgmt.RequestAnthropicToken)
-		mgmt.GET("/codex-auth-url", s.mgmt.RequestCodexToken)
-		mgmt.GET("/gemini-cli-auth-url", s.mgmt.RequestGeminiCLIToken)
-		mgmt.GET("/antigravity-auth-url", s.mgmt.RequestAntigravityToken)
-		mgmt.GET("/qwen-auth-url", s.mgmt.RequestQwenToken)
-		mgmt.GET("/kimi-auth-url", s.mgmt.RequestKimiToken)
-		mgmt.GET("/iflow-auth-url", s.mgmt.RequestIFlowToken)
-		mgmt.POST("/iflow-auth-url", s.mgmt.RequestIFlowCookieToken)
-		mgmt.POST("/oauth-callback", s.mgmt.PostOAuthCallback)
-		mgmt.GET("/get-auth-status", s.mgmt.GetAuthStatus)
 	}
 
 	// Public endpoints - no management key required

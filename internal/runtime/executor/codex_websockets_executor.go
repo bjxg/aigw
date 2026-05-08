@@ -172,13 +172,13 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	originalTranslated := sdktranslator.TranslateRequest(from, to, baseModel, originalPayload, false)
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, false)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return resp, err
 	}
 
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 	body, _ = sjson.SetBytes(body, "stream", true)
 	body, _ = sjson.DeleteBytes(body, "previous_response_id")
@@ -385,13 +385,13 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 	to := sdktranslator.FromString("codex")
 	body := req.Payload
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return nil, err
 	}
 
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, body, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, body, requestedModel)
 
 	httpURL := strings.TrimSuffix(baseURL, "/") + "/responses"
 	wsURL, err := buildCodexResponsesWebsocketURL(httpURL)

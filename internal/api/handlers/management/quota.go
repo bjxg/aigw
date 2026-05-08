@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 )
 
 // Quota exceeded toggles
@@ -43,7 +44,15 @@ func (h *Handler) PostQuotaReconcile(c *gin.Context) {
 	}
 
 	authIndex := firstNonEmptyString(body.AuthIndexSnake, body.AuthIndexCamel, body.AuthIndexPascal)
-	auth := h.authByIndex(authIndex)
+	var auth *coreauth.Auth
+	if h.authManager != nil {
+		for _, a := range h.authManager.List() {
+			if a.ID == authIndex {
+				auth = a
+				break
+			}
+		}
+	}
 	if auth == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "auth not found"})
 		return
@@ -112,13 +121,13 @@ func (h *Handler) PostAuthFileQuotaSnapshot(c *gin.Context) {
 
 	provider := strings.TrimSpace(body.Provider)
 	if h.authManager != nil {
-		auth := h.authByIndex(authIndex)
-		if auth == nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "auth not found"})
-			return
-		}
-		if provider == "" {
-			provider = strings.TrimSpace(auth.Provider)
+		for _, a := range h.authManager.List() {
+			if a.ID == authIndex {
+				if provider == "" {
+					provider = strings.TrimSpace(a.Provider)
+				}
+				break
+			}
 		}
 	}
 
@@ -169,6 +178,15 @@ func (h *Handler) PostAuthFileQuotaSnapshot(c *gin.Context) {
 	}
 	h.clearTrendCache()
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func firstNonEmptyString(values ...*string) string {
+	for _, value := range values {
+		if value != nil && strings.TrimSpace(*value) != "" {
+			return strings.TrimSpace(*value)
+		}
+	}
+	return ""
 }
 
 func firstNonEmptyValue(values ...string) string {

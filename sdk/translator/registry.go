@@ -91,7 +91,7 @@ func (r *Registry) TranslateNonStream(ctx context.Context, from, to Format, mode
 	return string(rawJSON)
 }
 
-// TranslateNonStream applies the registered non-stream response translator.
+// TranslateTokenCount applies the registered token count translator.
 func (r *Registry) TranslateTokenCount(ctx context.Context, from, to Format, count int64, rawJSON []byte) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

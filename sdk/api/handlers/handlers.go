@@ -26,7 +26,6 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v6/sdk/translator"
 	"github.com/tidwall/gjson"
 )
 
@@ -630,7 +629,7 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 		Stream:          false,
 		Alt:             alt,
 		OriginalRequest: rawJSON,
-		SourceFormat:    sdktranslator.FromString(handlerType),
+		SourceFormat:    		handlerType,
 	}
 	opts.Metadata = reqMeta
 	resp, err := h.AuthManager.Execute(ctx, providers, req, opts)
@@ -678,7 +677,7 @@ func (h *BaseAPIHandler) ExecuteCountWithAuthManager(ctx context.Context, handle
 		Stream:          false,
 		Alt:             alt,
 		OriginalRequest: rawJSON,
-		SourceFormat:    sdktranslator.FromString(handlerType),
+		SourceFormat:    handlerType,
 	}
 	opts.Metadata = reqMeta
 	resp, err := h.AuthManager.ExecuteCount(ctx, providers, req, opts)
@@ -731,7 +730,7 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 		Stream:          true,
 		Alt:             alt,
 		OriginalRequest: rawJSON,
-		SourceFormat:    sdktranslator.FromString(handlerType),
+		SourceFormat:    handlerType,
 	}
 	opts.Metadata = reqMeta
 	streamResult, err := h.AuthManager.ExecuteStream(ctx, providers, req, opts)

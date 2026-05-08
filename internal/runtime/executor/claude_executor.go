@@ -11,11 +11,9 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
-	claudeauth "github.com/router-for-me/CLIProxyAPI/v6/internal/auth/claude"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/misc"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/thinking"
@@ -111,7 +109,7 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, stream)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return resp, err
 	}
@@ -131,7 +129,7 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
 	}
 
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 
 	if !skipAnthropic {
 		// Disable thinking if tool_choice forces tool use (Anthropic API constraint)
@@ -267,7 +265,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 	body := sdktranslator.TranslateRequest(from, to, baseModel, req.Payload, true)
 	body, _ = sjson.SetBytes(body, "model", baseModel)
 
-	body, err = thinking.ApplyThinking(body, req.Model, from.String(), to.String(), e.Identifier())
+	body, err = thinking.ApplyThinking(body, req.Model, from, to, e.Identifier())
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +285,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 	}
 
 	requestedModel := payloadRequestedModel(opts, req.Model)
-	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to.String(), "", body, originalTranslated, requestedModel)
+	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, originalTranslated, requestedModel)
 
 	if !skipAnthropic {
 		// Disable thinking if tool_choice forces tool use (Anthropic API constraint)
@@ -533,32 +531,6 @@ func (e *ClaudeExecutor) Refresh(ctx context.Context, auth *cliproxyauth.Auth) (
 	if auth == nil {
 		return nil, fmt.Errorf("claude executor: auth is nil")
 	}
-	var refreshToken string
-	if auth.Metadata != nil {
-		if v, ok := auth.Metadata["refresh_token"].(string); ok && v != "" {
-			refreshToken = v
-		}
-	}
-	if refreshToken == "" {
-		return auth, nil
-	}
-	svc := claudeauth.NewClaudeAuth(e.cfg)
-	td, err := svc.RefreshTokens(ctx, refreshToken)
-	if err != nil {
-		return nil, err
-	}
-	if auth.Metadata == nil {
-		auth.Metadata = make(map[string]any)
-	}
-	auth.Metadata["access_token"] = td.AccessToken
-	if td.RefreshToken != "" {
-		auth.Metadata["refresh_token"] = td.RefreshToken
-	}
-	auth.Metadata["email"] = td.Email
-	auth.Metadata["expired"] = td.Expire
-	auth.Metadata["type"] = "claude"
-	now := time.Now().Format(time.RFC3339)
-	auth.Metadata["last_refresh"] = now
 	return auth, nil
 }
 

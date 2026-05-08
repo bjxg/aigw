@@ -25,12 +25,7 @@ func (h *Handler) renameChannelReferences(oldNames []string, newName string) err
 		if renameConfigAPIKeyChannels(h.cfg.APIKeyEntries, oldNameSet, newName) {
 			configChanged = true
 		}
-		if renameOAuthModelAliasChannels(h.cfg, oldNameSet, newName) {
-			configChanged = true
-			if err := usage.UpsertRuntimeSetting(usage.RuntimeSettingOAuthModelAlias, h.cfg.OAuthModelAlias); err != nil {
-				return fmt.Errorf("failed to persist oauth model aliases: %w", err)
-			}
-		}
+
 	}
 
 	if routingChanged && h.cfg != nil {
@@ -159,22 +154,4 @@ func renameSQLiteAPIKeyChannels(oldNameSet map[string]struct{}, newName string) 
 	return nil
 }
 
-func renameOAuthModelAliasChannels(cfg *config.Config, oldNameSet map[string]struct{}, newName string) bool {
-	if cfg == nil || len(cfg.OAuthModelAlias) == 0 {
-		return false
-	}
-	newKey := strings.ToLower(strings.TrimSpace(newName))
-	changed := false
-	for channel, aliases := range cfg.OAuthModelAlias {
-		if !shouldRenameChannel(channel, oldNameSet) {
-			continue
-		}
-		delete(cfg.OAuthModelAlias, channel)
-		cfg.OAuthModelAlias[newKey] = append(cfg.OAuthModelAlias[newKey], aliases...)
-		changed = true
-	}
-	if changed {
-		cfg.OAuthModelAlias = sanitizedOAuthModelAlias(cfg.OAuthModelAlias)
-	}
-	return changed
-}
+

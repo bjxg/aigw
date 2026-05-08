@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/runtime/geminicli"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 )
@@ -169,19 +168,6 @@ func backfillCodexMetadata(metadata map[string]any) {
 	if planType, _ := metadata["plan_type"].(string); strings.TrimSpace(planType) != "" {
 		metadata["plan_type"] = strings.ToLower(strings.TrimSpace(planType))
 		return
-	}
-	idToken, _ := metadata["id_token"].(string)
-	idToken = strings.TrimSpace(idToken)
-	if idToken == "" {
-		return
-	}
-	claims, err := codex.ParseJWTToken(idToken)
-	if err != nil || claims == nil {
-		return
-	}
-	planType := strings.ToLower(strings.TrimSpace(claims.CodexAuthInfo.ChatgptPlanType))
-	if planType != "" {
-		metadata["plan_type"] = planType
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
-	"reflect"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
@@ -104,11 +103,6 @@ func (w *Watcher) reloadConfig() bool {
 	w.config = newConfig
 	w.clientsMutex.Unlock()
 
-	var affectedOAuthProviders []string
-	if oldConfig != nil {
-		_, affectedOAuthProviders = diff.DiffOAuthExcludedModelChanges(oldConfig.OAuthExcludedModels, newConfig.OAuthExcludedModels)
-	}
-
 	util.SetLogLevel(newConfig)
 	if oldConfig != nil && oldConfig.Debug != newConfig.Debug {
 		log.Debugf("log level updated - debug mode changed from %t to %t", oldConfig.Debug, newConfig.Debug)
@@ -127,9 +121,9 @@ func (w *Watcher) reloadConfig() bool {
 	}
 
 	authDirChanged := oldConfig == nil || oldConfig.AuthDir != newConfig.AuthDir
-	forceAuthRefresh := oldConfig != nil && (oldConfig.ForceModelPrefix != newConfig.ForceModelPrefix || !reflect.DeepEqual(oldConfig.OAuthModelAlias, newConfig.OAuthModelAlias))
+	forceAuthRefresh := oldConfig != nil && oldConfig.ForceModelPrefix != newConfig.ForceModelPrefix
 
 	log.Infof("config successfully reloaded, triggering client reload")
-	w.reloadClients(authDirChanged, affectedOAuthProviders, forceAuthRefresh)
+	w.reloadClients(authDirChanged, nil, forceAuthRefresh)
 	return true
 }
