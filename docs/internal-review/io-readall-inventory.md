@@ -13,15 +13,15 @@
 
 ## 高优先级优先收敛区
 
-- `aigw-server/internal/runtime/executor/*`
+- `aigw/internal/runtime/executor/*`
   大量读取上游响应体，是 provider-specific 限制的主要落点。
-- `aigw-server/internal/api/handlers/management/auth_files.go`
+- `aigw/internal/api/handlers/management/auth_files.go`
   管理接口与 OAuth 辅助路径混在一起。
-- `aigw-server/internal/api/handlers/management/api_tools.go`
+- `aigw/internal/api/handlers/management/api_tools.go`
   管理端代理调用与 OAuth token 刷新路径。
-- `aigw-server/internal/store/objectstore.go`
+- `aigw/internal/store/objectstore.go`
   对象存储读取路径。
-- `aigw-server/internal/logging/request_logger.go`
+- `aigw/internal/logging/request_logger.go`
   压缩内容解码与日志内容回读路径。
 
 ## 已完成底座

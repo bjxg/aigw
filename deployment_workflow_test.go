@@ -16,7 +16,7 @@ func TestDeployWorkflowOnlyPublishesBackendBinary(t *testing.T) {
 	for _, want := range []string{
 		`Upload binary (as temp name)`,
 		`source: "cli-proxy-api-new"`,
-		`target: "/opt/aigw-server2/"`,
+		`target: "/opt/aigw2/"`,
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("deploy workflow missing backend binary deployment marker %q", want)

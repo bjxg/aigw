@@ -118,7 +118,7 @@ func TestLoadConfigReadsDisabledAutoUpdate(t *testing.T) {
 auto-update:
   enabled: false
   channel: dev
-  repository: bjxg/aigw-server
+  repository: bjxg/aigw
   docker-image: ghcr.io/example/custom
   updater-url: http://updater.local:8320
 `)
@@ -137,8 +137,8 @@ auto-update:
 	if cfg.AutoUpdate.Channel != "dev" {
 		t.Fatalf("AutoUpdate.Channel = %q, want dev", cfg.AutoUpdate.Channel)
 	}
-	if cfg.AutoUpdate.Repository != "bjxg/aigw-server" {
-		t.Fatalf("AutoUpdate.Repository = %q, want bjxg/aigw-server", cfg.AutoUpdate.Repository)
+	if cfg.AutoUpdate.Repository != "bjxg/aigw" {
+		t.Fatalf("AutoUpdate.Repository = %q, want bjxg/aigw", cfg.AutoUpdate.Repository)
 	}
 	if cfg.AutoUpdate.DockerImage != "ghcr.io/example/custom" {
 		t.Fatalf("AutoUpdate.DockerImage = %q, want ghcr.io/example/custom", cfg.AutoUpdate.DockerImage)

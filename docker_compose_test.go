@@ -14,10 +14,10 @@ func TestRepositoryComposeUsesProjectDirForDefaultDataMounts(t *testing.T) {
 	content := string(data)
 
 	for _, want := range []string{
-		"${CLI_PROXY_CONFIG_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/config.yaml}:/CLIProxyAPI/config.yaml",
-		"${CLI_PROXY_AUTH_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/auths}:${AUTH_PATH:-/root/.cli-proxy-api}",
-		"${CLI_PROXY_LOG_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/logs}:/CLIProxyAPI/logs",
-		"${CLI_PROXY_DATA_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/data}:/CLIProxyAPI/data",
+		"${CLI_PROXY_CONFIG_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/config.yaml}:/CLIProxyAPI/config.yaml",
+		"${CLI_PROXY_AUTH_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/auths}:${AUTH_PATH:-/root/.cli-proxy-api}",
+		"${CLI_PROXY_LOG_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/logs}:/CLIProxyAPI/logs",
+		"${CLI_PROXY_DATA_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/data}:/CLIProxyAPI/data",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("docker-compose.yml missing %q", want)
@@ -46,11 +46,11 @@ func TestRepositoryComposeMirrorsDeploymentFilesAtProjectDirInUpdater(t *testing
 	content := string(data)
 
 	for _, want := range []string{
-		"aigw-server_PROJECT_DIR: ${aigw-server_PROJECT_DIR:-${PWD:-.}}",
-		"aigw-server_COMPOSE_FILE: ${aigw-server_PROJECT_DIR:-${PWD:-.}}/docker-compose.yml",
-		"aigw-server_ENV_FILE: ${aigw-server_ENV_FILE:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/.env}",
-		"./docker-compose.yml:${aigw-server_PROJECT_DIR:-${PWD:-.}}/docker-compose.yml:ro",
-		"./.env:${aigw-server_PROJECT_DIR:-${PWD:-.}}/.env",
+		"aigw_PROJECT_DIR: ${aigw_PROJECT_DIR:-${PWD:-.}}",
+		"aigw_COMPOSE_FILE: ${aigw_PROJECT_DIR:-${PWD:-.}}/docker-compose.yml",
+		"aigw_ENV_FILE: ${aigw_ENV_FILE:-${aigw_PROJECT_DIR:-${PWD:-.}}/.env}",
+		"./docker-compose.yml:${aigw_PROJECT_DIR:-${PWD:-.}}/docker-compose.yml:ro",
+		"./.env:${aigw_PROJECT_DIR:-${PWD:-.}}/.env",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("docker-compose.yml updater config missing %q", want)

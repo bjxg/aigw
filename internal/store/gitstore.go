@@ -598,7 +598,7 @@ func (s *GitTokenStore) commitAndPushLocked(message string, relPaths ...string) 
 		message = "Update auth store"
 	}
 	signature := &object.Signature{
-		Name:  "aigw-server",
+		Name:  "aigw",
 		Email: "cliproxy@local",
 		When:  time.Now(),
 	}

@@ -65,10 +65,10 @@ func TestInstallComposeMirrorsDeploymentFilesAtHostPathInUpdater(t *testing.T) {
 	content := string(data)
 
 	for _, want := range []string{
-		"aigw-server_COMPOSE_FILE: ${aigw-server_INSTALL_DIR}/docker-compose.yml",
-		"aigw-server_ENV_FILE: ${aigw-server_INSTALL_DIR}/.env",
-		"./docker-compose.yml:${aigw-server_INSTALL_DIR}/docker-compose.yml:ro",
-		"./.env:${aigw-server_INSTALL_DIR}/.env",
+		"aigw_COMPOSE_FILE: ${aigw_INSTALL_DIR}/docker-compose.yml",
+		"aigw_ENV_FILE: ${aigw_INSTALL_DIR}/.env",
+		"./docker-compose.yml:${aigw_INSTALL_DIR}/docker-compose.yml:ro",
+		"./.env:${aigw_INSTALL_DIR}/.env",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("install.sh generated updater compose missing %q", want)
@@ -76,8 +76,8 @@ func TestInstallComposeMirrorsDeploymentFilesAtHostPathInUpdater(t *testing.T) {
 	}
 
 	for _, forbidden := range []string{
-		"aigw-server_COMPOSE_FILE: /workspace/docker-compose.yml",
-		"aigw-server_ENV_FILE: /workspace/.env",
+		"aigw_COMPOSE_FILE: /workspace/docker-compose.yml",
+		"aigw_ENV_FILE: /workspace/.env",
 		"./docker-compose.yml:/workspace/docker-compose.yml:ro",
 		"./.env:/workspace/.env",
 	} {

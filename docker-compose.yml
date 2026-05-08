@@ -1,6 +1,6 @@
 services:
   cli-proxy-api:
-    image: ${CLI_PROXY_IMAGE:-ghcr.io/bjxg/aigw-server:latest}
+    image: ${CLI_PROXY_IMAGE:-ghcr.io/bjxg/aigw:latest}
     pull_policy: ${CLI_PROXY_PULL_POLICY:-always}
     build:
       context: .
@@ -15,11 +15,11 @@ services:
         FRONTEND_COMMIT: ${FRONTEND_COMMIT:-}
     container_name: cli-proxy-api
     environment:
-      aigw-server_LOCALE: ${aigw-server_LOCALE:-zh}
+      aigw_LOCALE: ${aigw_LOCALE:-zh}
       AUTH_PATH: ${AUTH_PATH:-/root/.cli-proxy-api}
-      LANG: ${aigw-server_LANG:-C.UTF-8}
-      LANGUAGE: ${aigw-server_LANGUAGE:-en_US:en}
-      LC_ALL: ${aigw-server_LANG:-C.UTF-8}
+      LANG: ${aigw_LANG:-C.UTF-8}
+      LANGUAGE: ${aigw_LANGUAGE:-en_US:en}
+      LC_ALL: ${aigw_LANG:-C.UTF-8}
     ports:
       - "8317:8317"
       - "127.0.0.1:8085:8085"
@@ -28,8 +28,8 @@ services:
       - "127.0.0.1:51121:51121"
       - "127.0.0.1:11451:11451"
     volumes:
-      - ${CLI_PROXY_CONFIG_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/config.yaml}:/CLIProxyAPI/config.yaml
-      - ${CLI_PROXY_AUTH_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/auths}:${AUTH_PATH:-/root/.cli-proxy-api}
-      - ${CLI_PROXY_LOG_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/logs}:/CLIProxyAPI/logs
-      - ${CLI_PROXY_DATA_PATH:-${aigw-server_PROJECT_DIR:-${PWD:-.}}/data}:/CLIProxyAPI/data
+      - ${CLI_PROXY_CONFIG_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/config.yaml}:/CLIProxyAPI/config.yaml
+      - ${CLI_PROXY_AUTH_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/auths}:${AUTH_PATH:-/root/.cli-proxy-api}
+      - ${CLI_PROXY_LOG_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/logs}:/CLIProxyAPI/logs
+      - ${CLI_PROXY_DATA_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/data}:/CLIProxyAPI/data
     restart: unless-stopped

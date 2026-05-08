@@ -5,15 +5,15 @@
 ## 仓库结构
 
 - 根目录只是工作区，不是 Git 仓库。
-- `aigw-server`：Go 后端仓库。
+- `aigw`：Go 后端仓库。
 - `aigw-panel`：前端管理端仓库。
 
 ## 标准命令
 
-### aigw-server
+### aigw
 
 ```bash
-cd /Users/chengcy/dev/sources/go/aigw-server
+cd /Users/chengcy/dev/sources/go/aigw
 go test ./...
 ```
 

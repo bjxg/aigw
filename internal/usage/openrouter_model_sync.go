@@ -274,7 +274,7 @@ func fetchOpenRouterModels(ctx context.Context) ([]OpenRouterRemoteModel, error)
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "aigw-server OpenRouter model sync")
+	req.Header.Set("User-Agent", "aigw OpenRouter model sync")
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

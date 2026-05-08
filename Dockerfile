@@ -9,7 +9,7 @@ RUN apk add --no-cache git ca-certificates
 
 WORKDIR /src
 
-# Local `docker compose up -d` from the aigw-server repo should always build the
+# Local `docker compose up -d` from the aigw repo should always build the
 # current management panel instead of depending on a separately checked out
 # `frontend/` directory or an outdated published image. FRONTEND_COMMIT is part
 # of this layer on purpose: a moving branch name alone is invisible to Docker's
@@ -86,7 +86,7 @@ EXPOSE 8317
 
 ENV TZ=Asia/Shanghai \
     MANAGEMENT_PANEL_DIR=/CLIProxyAPI/panel \
-    aigw-server_LOCALE=zh
+    aigw_LOCALE=zh
 
 RUN cp /usr/share/zoneinfo/${TZ} /etc/localtime && echo "${TZ}" > /etc/timezone
 

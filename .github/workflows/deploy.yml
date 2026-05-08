@@ -1,4 +1,4 @@
-name: Deploy aigw-server
+name: Deploy aigw
 
 on:
   push:
@@ -45,7 +45,7 @@ jobs:
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "cli-proxy-api-new"
-          target: "/opt/aigw-server2/"
+          target: "/opt/aigw2/"
           overwrite: true
 
       - name: Stop, swap, and restart
@@ -56,17 +56,17 @@ jobs:
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            SERVICE_BIN="$(systemctl show -p ExecStart --value aigw-server2 | sed -nE 's/.*path=([^ ;]+).*/\1/p' | head -n1)"
+            SERVICE_BIN="$(systemctl show -p ExecStart --value aigw2 | sed -nE 's/.*path=([^ ;]+).*/\1/p' | head -n1)"
             if [ -z "$SERVICE_BIN" ]; then
-              if [ -x /opt/aigw-server2/aigw-server2 ]; then
-                SERVICE_BIN="/opt/aigw-server2/aigw-server2"
+              if [ -x /opt/aigw2/aigw2 ]; then
+                SERVICE_BIN="/opt/aigw2/aigw2"
               else
-                SERVICE_BIN="/opt/aigw-server2/cli-proxy-api"
+                SERVICE_BIN="/opt/aigw2/cli-proxy-api"
               fi
             fi
             SERVICE_DIR="$(dirname "$SERVICE_BIN")"
             SERVICE_NAME="$(basename "$SERVICE_BIN")"
-            TEMP_BIN="/opt/aigw-server2/cli-proxy-api-new"
+            TEMP_BIN="/opt/aigw2/cli-proxy-api-new"
             if [ ! -f "$TEMP_BIN" ]; then
               echo "uploaded temp binary not found: $TEMP_BIN"
               exit 1
@@ -74,7 +74,7 @@ jobs:
             cd "$SERVICE_DIR"
             echo "Service binary: $SERVICE_BIN"
             # Stop via systemd
-            systemctl stop aigw-server2 2>/dev/null || true
+            systemctl stop aigw2 2>/dev/null || true
             sleep 1
             # Kill any stray processes
             PIDS=$(pgrep -f "^${SERVICE_BIN}$" 2>/dev/null) || true
@@ -92,9 +92,9 @@ jobs:
             # Clean up old backups, keep last 3
             ls -1t "${SERVICE_NAME}.bak."* 2>/dev/null | tail -n +4 | xargs -r rm -f
             # Start service
-            systemctl start aigw-server2
+            systemctl start aigw2
             sleep 3
-            systemctl is-active aigw-server2
+            systemctl is-active aigw2
             if ! grep -a -q "${{ github.sha }}" "$SERVICE_BIN"; then
               echo "deployed binary does not contain expected commit SHA"
               exit 1

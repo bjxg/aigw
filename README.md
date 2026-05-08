@@ -1,11 +1,11 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="License">
-  <img src="https://img.shields.io/github/stars/bjxg/aigw-server?style=for-the-badge&color=f59e0b" alt="Stars">
-  <img src="https://img.shields.io/github/forks/bjxg/aigw-server?style=for-the-badge&color=8b5cf6" alt="Forks">
+  <img src="https://img.shields.io/github/stars/bjxg/aigw?style=for-the-badge&color=f59e0b" alt="Stars">
+  <img src="https://img.shields.io/github/forks/bjxg/aigw?style=for-the-badge&color=8b5cf6" alt="Forks">
 </p>
 
-<h1 align="center">🔀 aigw-server</h1>
+<h1 align="center">🔀 aigw</h1>
 
 <p align="center">
   <strong>A unified proxy server for AI CLI tools — use your <em>existing</em> subscriptions with any OpenAI / Gemini / Claude / Codex compatible client.</strong>
@@ -18,23 +18,23 @@
 <p align="center">
   <a href="https://help.router-for.me/">📖 Docs</a> ·
   <a href="https://github.com/bjxg/aigw-panel">🖥️ Management Panel</a> ·
-  <a href="https://github.com/bjxg/aigw-server/issues">🐛 Report Bug</a> ·
-  <a href="https://github.com/bjxg/aigw-server/pulls">✨ Request Feature</a>
+  <a href="https://github.com/bjxg/aigw/issues">🐛 Report Bug</a> ·
+  <a href="https://github.com/bjxg/aigw/pulls">✨ Request Feature</a>
 </p>
 
 ---
 
-## ⚡ What is aigw-server?
+## ⚡ What is aigw?
 
 > **✨ Heavily enhanced fork of the [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) project** — rebuilt with a production-grade management layer, web control panel hosting, and a terminal TUI for day-2 operations.
 
-aigw-server turns AI CLI subscriptions, OAuth credentials, API keys, and compatible upstream services into one managed API layer. It proxies Claude Code, Gemini CLI, OpenAI Codex, Amp CLI, OpenAI-compatible clients, and other AI coding tools through a unified endpoint, then adds routing groups, failover, request logging, quota control, model pricing, image-generation support, API-key self-service, online updates, `/manage` web hosting, and terminal management workflows around that traffic.
+aigw turns AI CLI subscriptions, OAuth credentials, API keys, and compatible upstream services into one managed API layer. It proxies Claude Code, Gemini CLI, OpenAI Codex, Amp CLI, OpenAI-compatible clients, and other AI coding tools through a unified endpoint, then adds routing groups, failover, request logging, quota control, model pricing, image-generation support, API-key self-service, online updates, `/manage` web hosting, and terminal management workflows around that traffic.
 
 ```
 ┌───────────────────────┐         ┌──────────────┐         ┌────────────────────┐
 │   AI Coding Tools     │         │              │         │  Upstream Providers │
 │                       │         │              │ ──────▶ │  Google Gemini      │
-│  Claude Code          │ ──────▶ │   aigw-server   │ ──────▶ │  OpenAI / Codex    │
+│  Claude Code          │ ──────▶ │   aigw   │ ──────▶ │  OpenAI / Codex    │
 │  Gemini CLI           │         │   :8317      │ ──────▶ │  Anthropic Claude  │
 │  OpenAI Codex         │         │              │ ──────▶ │  Qwen / iFlow      │
 │  Amp CLI / IDE        │         │              │ ──────▶ │  Antigravity       │
@@ -124,7 +124,7 @@ aigw-server turns AI CLI subscriptions, OAuth credentials, API keys, and compati
 
 ## 📸 Management Panel Preview
 
-aigw-server can expose a built-in web control panel at `/manage`. The server can host bundled SPA assets or fall back to synced management assets from the configured panel repository.
+aigw can expose a built-in web control panel at `/manage`. The server can host bundled SPA assets or fall back to synced management assets from the configured panel repository.
 
 The gallery below uses the latest supplied screenshots, covering the current end-to-end management workflow.
 
@@ -132,7 +132,7 @@ The gallery below uses the latest supplied screenshots, covering the current end
 
 | Home overview | Operations overview |
 | :------------ | :------------------ |
-| <img src="docs/images/readme-showcase/home-overview-1.png" width="100%" alt="aigw-server dashboard overview" /> | <img src="docs/images/readme-showcase/home-overview-2.png" width="100%" alt="aigw-server operations dashboard" /> |
+| <img src="docs/images/readme-showcase/home-overview-1.png" width="100%" alt="aigw dashboard overview" /> | <img src="docs/images/readme-showcase/home-overview-2.png" width="100%" alt="aigw operations dashboard" /> |
 
 | Chinese / English interface | Dark mode |
 | :-------------------------- | :-------- |
@@ -209,11 +209,11 @@ The gallery below uses the latest supplied screenshots, covering the current end
 
 ### 🐳 Install With Docker Compose
 
-Docker Compose is the recommended installation path for aigw-server. The included `docker-compose.yml` uses the published `ghcr.io/bjxg/aigw-server:latest` image by default and starts the API service.
+Docker Compose is the recommended installation path for aigw. The included `docker-compose.yml` uses the published `ghcr.io/bjxg/aigw:latest` image by default and starts the API service.
 
 ```bash
-git clone https://github.com/bjxg/aigw-server.git
-cd aigw-server
+git clone https://github.com/bjxg/aigw.git
+cd aigw
 cp config.example.yaml config.yaml
 docker compose up -d
 ```
@@ -236,7 +236,7 @@ After startup:
 - TUI: `docker compose exec cli-proxy-api ./cli-proxy-api -tui`
 - OAuth login modes: `docker compose exec cli-proxy-api ./cli-proxy-api -login`
 
-Set `aigw-server_LOCALE=en` or `aigw-server_LOCALE=zh` in your Compose environment to control the default TUI language.
+Set `aigw_LOCALE=en` or `aigw_LOCALE=zh` in your Compose environment to control the default TUI language.
 
 For cloud platforms that only allow one mounted directory, set `AUTH_PATH` to the authentication directory inside the container, for example `/CLIProxyAPI/auths`. `CLI_PROXY_AUTH_PATH` remains the host-side bind path, while `AUTH_PATH` is also used to override `auth-dir` at runtime.
 
@@ -245,7 +245,7 @@ For cloud platforms that only allow one mounted directory, set `AUTH_PATH` to th
 By default, API usage logs are stored in SQLite for persistence. For additional backup:
 1. Ensure you have a Redis server running.
 2. Edit `config.yaml` and set `redis.enable: true` with your Redis address.
-aigw-server will automatically snapshot and restore traffic metrics on every startup!
+aigw will automatically snapshot and restore traffic metrics on every startup!
 
 For large installations, tune `request-log-storage` in `config.yaml` to control how full request/response bodies are retained. By default, full bodies are compressed, kept for 30 days, and capped at ~1GB (1024MB); lightweight request metadata remains queryable for longer-term statistics. Set `content-retention-days: 0` to keep full content indefinitely, set `store-content: false` to stop new body storage without deleting existing historical content, and adjust `max-total-size-mb` to cap body storage so the oldest full bodies are pruned before the retention window is reached.
 
@@ -285,7 +285,7 @@ http://localhost:8317/manage
 ## 📐 Architecture
 
 ```text
-aigw-server/
+aigw/
 ├── cmd/server/               # Binary entry point and CLI mode dispatch
 ├── internal/api/             # HTTP server, management routes, middleware
 ├── internal/auth/            # Provider OAuth / cookie / browser auth flows
@@ -319,8 +319,8 @@ Contributions are welcome! Here's how to get started:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/bjxg/aigw-server.git
-cd aigw-server
+git clone https://github.com/bjxg/aigw.git
+cd aigw
 
 # 2. Create a feature branch from the latest dev baseline
 git fetch origin

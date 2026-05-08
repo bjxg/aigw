@@ -10,9 +10,9 @@
 
 - [x] 创建根级全仓审计报告 `docs/monorepo-audit-report.md`。完成时间：2026-04-13 10:40:29 +0800
 - [x] 创建根级修复计划 checklist `docs/monorepo-remediation-checklist.md`。完成时间：2026-04-13 10:40:29 +0800
-- [x] 将根级审计报告、修复计划与基线文档镜像到受版本控制的 `aigw-panel/docs/internal-review/` 与 `aigw-server/docs/internal-review/`，避免文档仅存在非 Git 根目录。完成时间：2026-04-13 17:35:33 +0800
+- [x] 将根级审计报告、修复计划与基线文档镜像到受版本控制的 `aigw-panel/docs/internal-review/` 与 `aigw/docs/internal-review/`，避免文档仅存在非 Git 根目录。完成时间：2026-04-13 17:35:33 +0800
 - [x] 将 `aigw-panel` 当前 lint warning 清零，并保证 `bun run check` 输出 0 warning、0 error。完成时间：2026-04-13 14:39:21 +0800
-- [x] 建立根级质量基线说明，固定记录 `aigw-server`、`aigw-panel` 的测试、构建、lint、E2E 命令。完成时间：2026-04-13 14:53:25 +0800
+- [x] 建立根级质量基线说明，固定记录 `aigw`、`aigw-panel` 的测试、构建、lint、E2E 命令。完成时间：2026-04-13 14:53:25 +0800
 - [x] 建立大文件扫描命令或脚本，前端页面超过 800 行时在 CI 或检查脚本中告警。完成时间：2026-04-13 14:53:25 +0800
 - [x] 建立前端 bundle 基线，记录主要 chunk 大小，并把超过预算的 chunk 纳入后续优化跟踪。完成时间：2026-04-13 14:53:25 +0800
 - [x] 盘点并确认前端唯一主线网络层，明确 `src/lib/http/*` 为保留路径还是迁移目标。完成时间：2026-04-13 14:45:34 +0800
@@ -76,7 +76,7 @@
 
 ## Phase 4：后端安全与稳定性治理
 
-- [x] 盘点 `aigw-server/internal` 与 `aigw-server/sdk` 中所有非测试 `io.ReadAll`，按请求体、上游响应体、本地文件、对象存储、压缩内容分类。完成时间：2026-04-13 15:19:36 +0800
+- [x] 盘点 `aigw/internal` 与 `aigw/sdk` 中所有非测试 `io.ReadAll`，按请求体、上游响应体、本地文件、对象存储、压缩内容分类。完成时间：2026-04-13 15:19:36 +0800
 - [x] 将 HTTP 请求体读取统一迁移到 `bodyutil.ReadRequestBody`、`LimitBodyMiddleware` 或等价限流封装。完成时间：2026-04-14 09:46:33 +0800
 - [x] 为 multipart auth 文件上传增加服务端大小限制，确保与 raw JSON 上传和 Vertex 导入的限制策略一致。完成时间：2026-04-13 14:23:15 +0800
 - [x] 为 auth 文件下载路径评估流式响应替代方案，减少 `os.ReadFile + c.Data` 的整文件读入模式。完成时间：2026-04-13 15:03:48 +0800
@@ -103,7 +103,7 @@
 ## Phase 5：验证与守护
 
 - [x] 后端每个安全治理批次完成后运行 `go test ./...`，并记录失败修复过程。完成时间：2026-04-14 10:30:05 +0800
-- [x] 为 public lookup 中间件和 multipart 上传大小限制补充 Go 回归测试，并确认 `aigw-server` 全量 `go test ./...` 通过。完成时间：2026-04-13 14:23:15 +0800
+- [x] 为 public lookup 中间件和 multipart 上传大小限制补充 Go 回归测试，并确认 `aigw` 全量 `go test ./...` 通过。完成时间：2026-04-13 14:23:15 +0800
 - [x] 前端每个拆分批次完成后运行 `bun run lint`、`bun run build`、相关 `bun run test`，并记录 bundle 差异。完成时间：2026-04-14 17:08:28 +0800
 - [x] 完成前端安全基线与 lint 清理批次后运行 `bun run check`，确认 lint 0 warning 且构建通过。完成时间：2026-04-13 14:39:21 +0800
 - [x] 为拆分后的高风险模块补组件测试，覆盖 Auth Files、Providers、API Keys、Config、Log Content Modal 的关键交互。完成时间：2026-04-14 17:08:28 +0800

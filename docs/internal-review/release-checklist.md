@@ -5,7 +5,7 @@
 ## 后端
 
 ```bash
-cd /Users/chengcy/dev/sources/go/aigw-server
+cd /Users/chengcy/dev/sources/go/aigw
 go test ./...
 ```
 
