@@ -180,6 +180,9 @@ func backfillAPIKeyNames(db *sql.DB) {
 // After migration, it backs up config.yaml and re-saves it without the API key
 // fields so the YAML file stays clean.
 func MigrateAPIKeysFromConfig(cfg *config.Config, configFilePath string) int {
+	if getGormDB() != nil {
+		return GormMigrateAPIKeysFromConfig(cfg, configFilePath)
+	}
 	db := getDB()
 	if db == nil || cfg == nil {
 		return 0
@@ -323,6 +326,9 @@ func MigrateAPIKeysFromConfig(cfg *config.Config, configFilePath string) int {
 
 // ListAPIKeys retrieves all API key entries from SQLite.
 func ListAPIKeys() []APIKeyRow {
+	if getGormDB() != nil {
+		return GormListAPIKeys()
+	}
 	db := getDB()
 	if db == nil {
 		return nil
@@ -343,6 +349,9 @@ func ListAPIKeys() []APIKeyRow {
 
 // GetAPIKey retrieves a single API key entry by key string.
 func GetAPIKey(key string) *APIKeyRow {
+	if getGormDB() != nil {
+		return GormGetAPIKey(key)
+	}
 	db := getDB()
 	if db == nil {
 		return nil
@@ -358,6 +367,9 @@ func GetAPIKey(key string) *APIKeyRow {
 
 // UpsertAPIKey inserts or updates an API key entry.
 func UpsertAPIKey(entry APIKeyRow) error {
+	if getGormDB() != nil {
+		return GormUpsertAPIKey(entry)
+	}
 	db := getDB()
 	if db == nil {
 		return fmt.Errorf("database not initialised")
@@ -415,6 +427,9 @@ func UpsertAPIKey(entry APIKeyRow) error {
 
 // DeleteAPIKey removes an API key entry by key string.
 func DeleteAPIKey(key string) error {
+	if getGormDB() != nil {
+		return GormDeleteAPIKey(key)
+	}
 	db := getDB()
 	if db == nil {
 		return fmt.Errorf("database not initialised")
@@ -425,6 +440,9 @@ func DeleteAPIKey(key string) error {
 
 // ReplaceAllAPIKeys atomically replaces all API keys with the given list.
 func ReplaceAllAPIKeys(entries []APIKeyRow) error {
+	if getGormDB() != nil {
+		return GormReplaceAllAPIKeys(entries)
+	}
 	db := getDB()
 	if db == nil {
 		return fmt.Errorf("database not initialised")

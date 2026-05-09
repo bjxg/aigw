@@ -6,14 +6,6 @@ func TestAPIKeyPermissionProfilesReplaceAndList(t *testing.T) {
 	cleanup := setupTestDB(t)
 	defer cleanup()
 
-	usageDBMu.Lock()
-	db := usageDB
-	usageDBMu.Unlock()
-	if db == nil {
-		t.Fatal("expected test db")
-	}
-	initAPIKeyPermissionProfilesTable(db)
-
 	profiles := []APIKeyPermissionProfileRow{
 		{
 			ID:                   "mixed-gpt-opencode",

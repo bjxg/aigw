@@ -149,6 +149,9 @@ func SyncOpenRouterModelList(ctx context.Context, models []OpenRouterRemoteModel
 }
 
 func GetOpenRouterModelSyncState() OpenRouterModelSyncState {
+	if getGormDB() != nil {
+		return GormGetOpenRouterModelSyncState()
+	}
 	db := getDB()
 	state := OpenRouterModelSyncState{
 		IntervalMinutes: defaultOpenRouterModelSyncIntervalMinutes,
@@ -183,6 +186,9 @@ func GetOpenRouterModelSyncState() OpenRouterModelSyncState {
 }
 
 func UpdateOpenRouterModelSyncSettings(enabled bool, intervalMinutes int) (OpenRouterModelSyncState, error) {
+	if getGormDB() != nil {
+		return GormUpdateOpenRouterModelSyncSettings(enabled, intervalMinutes)
+	}
 	db := getDB()
 	if db == nil {
 		return OpenRouterModelSyncState{}, fmt.Errorf("usage: database not initialised")
@@ -294,6 +300,10 @@ func fetchOpenRouterModels(ctx context.Context) ([]OpenRouterRemoteModel, error)
 }
 
 func ensureOpenRouterModelSyncStateRow() {
+	if getGormDB() != nil {
+		GormEnsureOpenRouterModelSyncStateRow()
+		return
+	}
 	db := getDB()
 	if db == nil {
 		return
@@ -342,6 +352,9 @@ func sqliteColumnExists(db *sql.DB, tableName, columnName string) bool {
 }
 
 func recordOpenRouterModelSyncResult(result OpenRouterModelSyncResult, syncErr error) OpenRouterModelSyncState {
+	if getGormDB() != nil {
+		return GormRecordOpenRouterModelSyncResult(result, syncErr)
+	}
 	db := getDB()
 	if db == nil {
 		return GetOpenRouterModelSyncState()

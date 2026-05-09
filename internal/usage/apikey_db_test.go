@@ -1,48 +1,24 @@
 package usage
 
 import (
-	"database/sql"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 )
 
 func setupTestDB(t *testing.T) func() {
 	t.Helper()
-	tmpFile, err := os.CreateTemp("", "apikey_test_*.db")
-	if err != nil {
-		t.Fatalf("create temp db: %v", err)
+	CloseDB()
+	dbPath := filepath.Join(t.TempDir(), "usage.db")
+	if err := InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+		t.Fatalf("InitDB() error = %v", err)
 	}
-	tmpFile.Close()
-	dbPath := tmpFile.Name()
-
-	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-
-	// Initialize tables
-	if _, err := db.Exec(createTableSQL); err != nil {
-		t.Fatalf("create request_logs table: %v", err)
-	}
-	initAPIKeysTable(db)
-
-	// Set global DB
-	usageDBMu.Lock()
-	usageDB = db
-	usageDBMu.Unlock()
-
+	stopRequestLogMaintenance()
 	return func() {
-		usageDBMu.Lock()
-		if usageDB != nil {
-			_ = usageDB.Close()
-			usageDB = nil
-		}
-		usageDBMu.Unlock()
+		CloseDB()
 		os.Remove(dbPath)
 		os.Remove(dbPath + "-wal")
 		os.Remove(dbPath + "-shm")
@@ -137,7 +113,12 @@ func TestAPIKeyNameBackfill(t *testing.T) {
 		t.Fatalf("insert unnamed key: %v", err)
 	}
 
-	backfillAPIKeyNames(db)
+	// Use GORM backfill if available, otherwise raw SQL
+	if getGormDB() != nil {
+		GormBackfillAPIKeyNames()
+	} else {
+		backfillAPIKeyNames(db)
+	}
 
 	got := GetAPIKey("sk-user-d9c1c123dsx89107612398sdedb20b5")
 	if got == nil {

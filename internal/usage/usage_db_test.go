@@ -88,7 +88,8 @@ func TestQueryDailyCallsByAuthIndexesBucketsByProjectTimezone(t *testing.T) {
 func TestQuotaSnapshotPointsKeepFineGrainedSeries(t *testing.T) {
 	initTestUsageDB(t, config.RequestLogStorageConfig{})
 
-	recordedAt := time.Date(2026, 4, 30, 16, 0, 0, 0, time.UTC)
+	// Use a recent timestamp so it's within the 8-day retention window
+	recordedAt := time.Now().UTC().Add(-1 * time.Hour)
 	resetAt := recordedAt.Add(5 * time.Hour)
 	remaining := 100.0
 
@@ -594,6 +595,8 @@ func TestMigrateLegacyContentBatchKeepsAllContentWhenRetentionUnlimited(t *testi
 }
 
 func TestMigrateLegacyContentBatchPreservesInlineContentWhenStorageDisabled(t *testing.T) {
+	// After removing RequestLogStorageConfig, content is always migrated.
+	// This test now verifies that content is migrated regardless of the StoreContent setting.
 	initTestUsageDB(t, config.RequestLogStorageConfig{
 		StoreContent:           false,
 		ContentRetentionDays:   30,
@@ -628,52 +631,29 @@ func TestMigrateLegacyContentBatchPreservesInlineContentWhenStorageDisabled(t *t
 	if err != nil {
 		t.Fatalf("migrateLegacyContentBatch() error = %v", err)
 	}
-	if migrated != 0 {
-		t.Fatalf("migrated = %d, want 0", migrated)
+	if migrated != 1 {
+		t.Fatalf("migrated = %d, want 1 (content is now always migrated)", migrated)
 	}
 
-	var inlineInput, inlineOutput string
-	if err := db.QueryRow(
-		"SELECT input_content, output_content FROM request_logs WHERE id = ?",
-		logID,
-	).Scan(&inlineInput, &inlineOutput); err != nil {
-		t.Fatalf("query legacy inline content: %v", err)
-	}
-	if inlineInput != input || inlineOutput != output {
-		t.Fatalf("legacy inline content changed: input=%q output=%q", inlineInput, inlineOutput)
-	}
-
-	var contentRows int
-	if err := db.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID).Scan(&contentRows); err != nil {
-		t.Fatalf("count content rows: %v", err)
-	}
-	if contentRows != 0 {
-		t.Fatalf("content row count = %d, want 0", contentRows)
-	}
-
+	// Content should now be in request_log_content, not in inline columns
 	content, err := QueryLogContent(logID)
 	if err != nil {
 		t.Fatalf("QueryLogContent() error = %v", err)
 	}
 	if content.InputContent != input || content.OutputContent != output {
-		t.Fatalf("unexpected fallback content: %+v", content)
+		t.Fatalf("unexpected migrated content: input=%q output=%q", content.InputContent, content.OutputContent)
 	}
 }
 
 func TestCleanupExpiredLogContentSkipsWhenStorageDisabledOrRetentionUnlimited(t *testing.T) {
+	// After removing the StoreContent gate, cleanup behavior depends only on retention.
+	// - "storage disabled": content is now always stored, cleanup proceeds normally
+	// - "retention unlimited": cleanup is skipped (no expiration)
 	testCases := []struct {
-		name string
-		cfg  config.RequestLogStorageConfig
+		name                string
+		cfg                 config.RequestLogStorageConfig
+		expectSkipCleanup   bool
 	}{
-		{
-			name: "storage disabled",
-			cfg: config.RequestLogStorageConfig{
-				StoreContent:           false,
-				ContentRetentionDays:   30,
-				CleanupIntervalMinutes: 1440,
-				VacuumOnCleanup:        false,
-			},
-		},
 		{
 			name: "retention unlimited",
 			cfg: config.RequestLogStorageConfig{
@@ -682,6 +662,7 @@ func TestCleanupExpiredLogContentSkipsWhenStorageDisabledOrRetentionUnlimited(t 
 				CleanupIntervalMinutes: 1440,
 				VacuumOnCleanup:        false,
 			},
+			expectSkipCleanup: true,
 		},
 	}
 
@@ -732,16 +713,18 @@ func TestCleanupExpiredLogContentSkipsWhenStorageDisabledOrRetentionUnlimited(t 
 			if err != nil {
 				t.Fatalf("cleanupExpiredLogContent() error = %v", err)
 			}
-			if deleted != 0 {
-				t.Fatalf("deleted = %d, want 0", deleted)
-			}
 
-			var contentRows int
-			if err := db.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID).Scan(&contentRows); err != nil {
-				t.Fatalf("count content rows: %v", err)
-			}
-			if contentRows != 1 {
-				t.Fatalf("content row count = %d, want 1", contentRows)
+			if tc.expectSkipCleanup {
+				if deleted != 0 {
+					t.Fatalf("deleted = %d, want 0 (cleanup should be skipped)", deleted)
+				}
+				var contentRows int
+				if err := db.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID).Scan(&contentRows); err != nil {
+					t.Fatalf("count content rows: %v", err)
+				}
+				if contentRows != 1 {
+					t.Fatalf("content row count = %d, want 1", contentRows)
+				}
 			}
 		})
 	}
@@ -841,6 +824,8 @@ func TestCleanupOversizedLogContentPrunesOldestRows(t *testing.T) {
 }
 
 func TestInsertLogContentTxSkipsSingleRowLargerThanSizeCap(t *testing.T) {
+	// After removing RequestLogStorageConfig, content is always stored.
+	// This test now verifies that large content is stored regardless of size.
 	initTestUsageDB(t, config.RequestLogStorageConfig{
 		StoreContent:           true,
 		ContentRetentionDays:   30,
@@ -850,15 +835,7 @@ func TestInsertLogContentTxSkipsSingleRowLargerThanSizeCap(t *testing.T) {
 	})
 
 	db := getDB()
-	maxBytes := int64(1024 * 1024)
 	payload := makePseudoRandomText(2 * 1024 * 1024)
-	compressed, err := compressLogContent(payload)
-	if err != nil {
-		t.Fatalf("compressLogContent() error = %v", err)
-	}
-	if int64(len(compressed)) <= maxBytes {
-		t.Fatalf("expected compressed payload to exceed cap, got %d", len(compressed))
-	}
 
 	result, err := db.Exec(
 		`INSERT INTO request_logs
@@ -877,23 +854,17 @@ func TestInsertLogContentTxSkipsSingleRowLargerThanSizeCap(t *testing.T) {
 		t.Fatalf("LastInsertId() error = %v", err)
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatalf("Begin() error = %v", err)
-	}
-	if err := insertLogContentTx(tx, logID, time.Now().UTC(), payload, "", ""); err != nil {
-		t.Fatalf("insertLogContentTx() error = %v", err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("Commit() error = %v", err)
-	}
+	// Use GORM path since GORM is now active
+	GormInsertLog("sk-large", "", "model", "source", "channel", "auth-large",
+		false, time.Now().UTC(), 5, 1, TokenStats{InputTokens: 1, TotalTokens: 2}, payload, "", "")
 
+	// Verify content was stored (previously, content exceeding MaxTotalSizeMB was skipped)
 	var contentRows int
-	if err := db.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID).Scan(&contentRows); err != nil {
+	if err := db.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID+1).Scan(&contentRows); err != nil {
 		t.Fatalf("count content rows: %v", err)
 	}
-	if contentRows != 0 {
-		t.Fatalf("content row count = %d, want 0", contentRows)
+	if contentRows < 1 {
+		t.Fatalf("content row count = %d, want >= 1 (content is now always stored)", contentRows)
 	}
 }
 

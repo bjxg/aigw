@@ -53,18 +53,17 @@ type LoggerPlugin struct {
 func NewLoggerPlugin() *LoggerPlugin { return &LoggerPlugin{stats: defaultRequestStatistics} }
 
 // HandleUsage implements coreusage.Plugin.
-// It updates the in-memory statistics store whenever a usage record is received.
+// It updates the in-memory statistics store whenever a usage record is received,
+// and always persists request logs to SQLite regardless of the statisticsEnabled flag.
 //
 // Parameters:
 //   - ctx: The context for the usage record
 //   - record: The usage record to aggregate
 func (p *LoggerPlugin) HandleUsage(ctx context.Context, record coreusage.Record) {
-	if !statisticsEnabled.Load() {
-		return
-	}
 	if p == nil || p.stats == nil {
 		return
 	}
+	// Always persist to SQLite, even if in-memory statistics are disabled.
 	p.stats.Record(ctx, record)
 }
 
@@ -288,11 +287,9 @@ func NewRequestStatistics() *RequestStatistics {
 }
 
 // Record ingests a new usage record and updates the aggregates.
+// SQLite logging always happens; in-memory statistics respect the statisticsEnabled flag.
 func (s *RequestStatistics) Record(ctx context.Context, record coreusage.Record) {
 	if s == nil {
-		return
-	}
-	if !statisticsEnabled.Load() {
 		return
 	}
 	timestamp := record.RequestedAt
@@ -316,6 +313,24 @@ func (s *RequestStatistics) Record(ctx context.Context, record coreusage.Record)
 	}
 	dayKey := timestamp.Format("2006-01-02")
 	hourKey := timestamp.Hour()
+
+	// Persist request logs in the usage manager worker so SQLite writes stay
+	// serialized and do not spawn one goroutine per request.
+	// Look up the display name for this API key so it's persisted in the log.
+	apiKeyName := ""
+	if statsKey != "" {
+		if row := GetAPIKey(statsKey); row != nil && row.Name != "" {
+			apiKeyName = row.Name
+		}
+	}
+	InsertLogWithDetails(statsKey, apiKeyName, modelName, record.Source, record.ChannelName,
+		record.AuthIndex, failed, timestamp, record.LatencyMs, record.FirstTokenMs, detail,
+		record.InputContent, record.OutputContent, record.DetailContent)
+
+	// In-memory statistics are optional; skip when disabled.
+	if !statisticsEnabled.Load() {
+		return
+	}
 
 	s.mu.Lock()
 	s.totalRequests++
@@ -347,19 +362,6 @@ func (s *RequestStatistics) Record(ctx context.Context, record coreusage.Record)
 	s.tokensByDay[dayKey] += totalTokens
 	s.tokensByHour[hourKey] += totalTokens
 	s.mu.Unlock()
-
-	// Persist request logs in the usage manager worker so SQLite writes stay
-	// serialized and do not spawn one goroutine per request.
-	// Look up the display name for this API key so it's persisted in the log.
-	apiKeyName := ""
-	if statsKey != "" {
-		if row := GetAPIKey(statsKey); row != nil && row.Name != "" {
-			apiKeyName = row.Name
-		}
-	}
-	InsertLogWithDetails(statsKey, apiKeyName, modelName, record.Source, record.ChannelName,
-		record.AuthIndex, failed, timestamp, record.LatencyMs, record.FirstTokenMs, detail,
-		record.InputContent, record.OutputContent, record.DetailContent)
 }
 
 func (s *RequestStatistics) updateAPIStats(stats *apiStats, model string, detail RequestDetail) {

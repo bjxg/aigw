@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/db"
 	log "github.com/sirupsen/logrus"
 	_ "modernc.org/sqlite"
 )
@@ -245,6 +246,7 @@ func migrateRequestLogDetailColumn(db *sql.DB) {
 
 // InitDB opens (or creates) the SQLite database at the given path and creates
 // the request_logs table if it doesn't exist.
+// The storageCfg parameter is deprecated and no longer used; content is always stored.
 func InitDB(dbPath string, storageCfg config.RequestLogStorageConfig, loc *time.Location) error {
 	usageDBMu.Lock()
 	defer usageDBMu.Unlock()
@@ -302,6 +304,7 @@ func InitDB(dbPath string, storageCfg config.RequestLogStorageConfig, loc *time.
 	usageDB = db
 	usageDBPath = dbPath
 	requestLogStorage = normalizeRequestLogStorageConfig(storageCfg)
+
 	log.Debugf("usage: running content column migration")
 	migrateContentColumns(db)
 	log.Debugf("usage: running cost column migration")
@@ -326,7 +329,17 @@ func InitDB(dbPath string, storageCfg config.RequestLogStorageConfig, loc *time.
 	initProxyPoolTable(db)
 	log.Debugf("usage: initializing runtime_settings table")
 	initRuntimeSettingsTable(db)
-	startRequestLogMaintenance(db)
+
+	// Initialize GORM on top of the existing *sql.DB
+	if err := initGORM(db, dbPath); err != nil {
+		log.Warnf("usage: failed to initialize GORM: %v (falling back to raw SQL)", err)
+	} else {
+		log.Debugf("usage: running GORM auto-migration")
+		if err := runGORMAutoMigrate(); err != nil {
+			log.Warnf("usage: GORM auto-migration failed: %v", err)
+		}
+	}
+
 	log.Infof("usage: SQLite database initialised at %s", dbPath)
 	return nil
 }
@@ -336,7 +349,10 @@ func CloseDB() {
 	usageDBMu.Lock()
 	defer usageDBMu.Unlock()
 
-	stopRequestLogMaintenance()
+	// Close GORM first
+	if err := db.Close(); err != nil {
+		log.Warnf("usage: close GORM: %v", err)
+	}
 	if usageDB != nil {
 		_ = usageDB.Close()
 		usageDB = nil
@@ -362,6 +378,12 @@ func InsertLogWithDetails(apiKey, apiKeyName, model, source, channelName, authIn
 func insertLog(apiKey, apiKeyName, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent, detailContent string) {
+	// Use GORM if available, otherwise fall back to raw SQL
+	if getGormDB() != nil {
+		GormInsertLog(apiKey, apiKeyName, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
+		return
+	}
+
 	db := getDB()
 	if db == nil {
 		return
@@ -400,7 +422,8 @@ func insertLog(apiKey, apiKeyName, model, source, channelName, authIndex string,
 		return
 	}
 
-	if requestLogStorage.StoreContent && (inputContent != "" || outputContent != "" || detailContent != "") {
+	// Always store content (RequestLogStorageConfig removed)
+	if inputContent != "" || outputContent != "" || detailContent != "" {
 		logID, errLastID := result.LastInsertId()
 		if errLastID != nil {
 			_ = tx.Rollback()
@@ -437,6 +460,9 @@ func SetTokenUsageCallback(fn func(apiKey string, totalTokens int64)) {
 
 // QueryLogs returns a paginated, filtered list of log entries.
 func QueryLogs(params LogQueryParams) (LogQueryResult, error) {
+	if getGormDB() != nil {
+		return GormQueryLogs(params)
+	}
 	// Normalise parameters
 	if params.Page < 1 {
 		params.Page = 1
@@ -517,6 +543,9 @@ func QueryLogs(params LogQueryParams) (LogQueryResult, error) {
 
 // QueryFilters returns the distinct API keys and models within the time range.
 func QueryFilters(days int) (FilterOptions, error) {
+	if getGormDB() != nil {
+		return GormQueryFilters(days)
+	}
 	if days < 1 {
 		days = 7
 	}
@@ -556,6 +585,9 @@ func QueryFilters(days int) (FilterOptions, error) {
 
 // QueryStats returns aggregated statistics over the filtered dataset.
 func QueryStats(params LogQueryParams) (LogStats, error) {
+	if getGormDB() != nil {
+		return GormQueryStats(params)
+	}
 	db := getDB()
 	if db == nil {
 		return LogStats{}, nil
@@ -590,6 +622,9 @@ func QueryStats(params LogQueryParams) (LogStats, error) {
 // DeleteLogsByAPIKey removes all request_logs and request_log_content entries
 // for the given API key. Returns the number of deleted log rows.
 func DeleteLogsByAPIKey(apiKey string) (int64, error) {
+	if getGormDB() != nil {
+		return GormDeleteLogsByAPIKey(apiKey)
+	}
 	db := getDB()
 	if db == nil {
 		return 0, fmt.Errorf("usage: database not initialised")
@@ -654,6 +689,9 @@ type DashboardTrends struct {
 // QueryDashboardKPI returns aggregated KPI data from SQLite for the dashboard.
 // This replaces the old in-memory snapshot-based counting which lost data on restart.
 func QueryDashboardKPI(days int) (DashboardKPI, error) {
+	if getGormDB() != nil {
+		return GormQueryDashboardKPI(days)
+	}
 	db := getDB()
 	if db == nil {
 		return DashboardKPI{}, nil
@@ -716,6 +754,9 @@ const dashboardThroughputBucketCount = 7
 // KPI trends follow the selected day range, while throughput always shows the
 // most recent 7 one-minute buckets.
 func QueryDashboardTrends(days int) (DashboardTrends, error) {
+	if getGormDB() != nil {
+		return GormQueryDashboardTrends(days)
+	}
 	db := getDB()
 	if db == nil {
 		return emptyDashboardTrends(days), nil
@@ -1118,6 +1159,9 @@ func queryDistinct(db *sql.DB, column, cutoff string) ([]string, error) {
 
 // QueryModelsForKey returns the distinct models used by a specific API key within the time range.
 func QueryModelsForKey(apiKey string, days int) ([]string, error) {
+	if getGormDB() != nil {
+		return GormQueryModelsForKey(apiKey, days)
+	}
 	db := getDB()
 	if db == nil {
 		return make([]string, 0), nil
@@ -1179,6 +1223,9 @@ func normalizeLogContentPart(part string) (string, error) {
 
 // QueryLogContent retrieves the stored request/response content for a single log entry.
 func QueryLogContent(id int64) (LogContentResult, error) {
+	if getGormDB() != nil {
+		return GormQueryLogContent(id)
+	}
 	db := getDB()
 	if db == nil {
 		return LogContentResult{}, fmt.Errorf("usage: database not initialised")
@@ -1209,6 +1256,9 @@ func QueryLogContent(id int64) (LogContentResult, error) {
 // QueryLogContentPart retrieves only one side (input/output) of the stored request/response content
 // for a single log entry. This avoids decompressing/transferring both blobs for the UI.
 func QueryLogContentPart(id int64, part string) (LogContentPartResult, error) {
+	if getGormDB() != nil {
+		return GormQueryLogContentPart(id, part)
+	}
 	db := getDB()
 	if db == nil {
 		return LogContentPartResult{}, fmt.Errorf("usage: database not initialised")
@@ -1266,6 +1316,9 @@ func QueryLogContentPart(id int64, part string) (LogContentPartResult, error) {
 // QueryLogContentForKey retrieves log content for a single entry, but only if it belongs to the given API key.
 // This is used by the public endpoint to ensure users can only access their own logs.
 func QueryLogContentForKey(id int64, apiKey string) (LogContentResult, error) {
+	if getGormDB() != nil {
+		return GormQueryLogContentForKey(id, apiKey)
+	}
 	db := getDB()
 	if db == nil {
 		return LogContentResult{}, fmt.Errorf("usage: database not initialised")
@@ -1296,6 +1349,9 @@ func QueryLogContentForKey(id int64, apiKey string) (LogContentResult, error) {
 // QueryLogContentPartForKey retrieves only one side (input/output) of the stored request/response content
 // for a single entry, but only if it belongs to the given API key.
 func QueryLogContentPartForKey(id int64, apiKey string, part string) (LogContentPartResult, error) {
+	if getGormDB() != nil {
+		return GormQueryLogContentPartForKey(id, apiKey, part)
+	}
 	db := getDB()
 	if db == nil {
 		return LogContentPartResult{}, fmt.Errorf("usage: database not initialised")
@@ -1368,6 +1424,9 @@ type ModelDistributionPoint struct {
 
 // QueryDailySeries returns per-day aggregated request count and token usage for a given API key.
 func QueryDailySeries(apiKey string, days int) ([]DailySeriesPoint, error) {
+	if getGormDB() != nil {
+		return GormQueryDailySeries(apiKey, days)
+	}
 	db := getDB()
 	if db == nil {
 		return nil, nil
@@ -1408,6 +1467,9 @@ func QueryDailySeries(apiKey string, days int) ([]DailySeriesPoint, error) {
 
 // QueryModelDistribution returns request count and token usage grouped by model for a given API key.
 func QueryModelDistribution(apiKey string, days int) ([]ModelDistributionPoint, error) {
+	if getGormDB() != nil {
+		return GormQueryModelDistribution(apiKey, days)
+	}
 	db := getDB()
 	if db == nil {
 		return nil, nil
@@ -1452,6 +1514,9 @@ type APIKeyDistributionPoint struct {
 
 // QueryAPIKeyDistribution returns request count and token usage grouped by api_key.
 func QueryAPIKeyDistribution(days int) ([]APIKeyDistributionPoint, error) {
+	if getGormDB() != nil {
+		return GormQueryAPIKeyDistribution(days)
+	}
 	db := getDB()
 	if db == nil {
 		return nil, nil
@@ -1514,6 +1579,9 @@ type HourlyModelPoint struct {
 
 // QueryHourlySeries returns per-hour token and model aggregates for the last N hours.
 func QueryHourlySeries(apiKey string, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
+	if getGormDB() != nil {
+		return GormQueryHourlySeries(apiKey, hours)
+	}
 	db := getDB()
 	if db == nil {
 		return nil, nil, nil
@@ -1589,6 +1657,9 @@ type EntityStatPoint struct {
 // QueryEntityStats returns aggregates grouped by a given column (e.g. "source" or "auth_index").
 // Time range is derived from days logic.
 func QueryEntityStats(apiKey string, days int, groupColumn string) ([]EntityStatPoint, error) {
+	if getGormDB() != nil {
+		return GormQueryEntityStats(apiKey, days, groupColumn)
+	}
 	db := getDB()
 	if db == nil {
 		return nil, nil
@@ -1627,6 +1698,9 @@ func QueryEntityStats(apiKey string, days int, groupColumn string) ([]EntityStat
 }
 
 func QueryDailyCallsByAuthIndexes(authIndexes []string, days int) ([]DailyCountPoint, error) {
+	if getGormDB() != nil {
+		return GormQueryDailyCallsByAuthIndexes(authIndexes, days)
+	}
 	db := getDB()
 	if db == nil {
 		return []DailyCountPoint{}, nil
@@ -1703,6 +1777,9 @@ func QueryDailyCallsByAuthIndexes(authIndexes []string, days int) ([]DailyCountP
 }
 
 func QueryHourlyCallsByAuthIndex(authIndex string, hours int) ([]HourlyCountPoint, error) {
+	if getGormDB() != nil {
+		return GormQueryHourlyCallsByAuthIndex(authIndex, hours)
+	}
 	db := getDB()
 	if db == nil {
 		return []HourlyCountPoint{}, nil
@@ -1757,6 +1834,9 @@ func QueryHourlyCallsByAuthIndex(authIndex string, hours int) ([]HourlyCountPoin
 }
 
 func QueryRequestCountByAuthIndexSince(authIndex string, since time.Time) (int64, error) {
+	if getGormDB() != nil {
+		return GormQueryRequestCountByAuthIndexSince(authIndex, since)
+	}
 	db := getDB()
 	if db == nil {
 		return 0, nil
@@ -2012,6 +2092,9 @@ func QueryDailyQuotaByAuthIndexes(authIndexes []string, quotaKey string, days in
 }
 
 func QueryQuotaSnapshotPoints(authIndex string, start, end time.Time) ([]QuotaSnapshotPoint, error) {
+	if getGormDB() != nil {
+		return GormQueryQuotaSnapshotPoints(authIndex, start, end)
+	}
 	db := getDB()
 	if db == nil {
 		return []QuotaSnapshotPoint{}, nil
@@ -2107,6 +2190,9 @@ func QueryQuotaSnapshotSeries(authIndex string, start, end time.Time) ([]QuotaSn
 // request_log_content and any legacy inline content not yet migrated out of
 // request_logs.
 func GetRequestLogStorageBytes() (int64, error) {
+	if getGormDB() != nil {
+		return GormGetRequestLogStorageBytes()
+	}
 	db := getDB()
 	if db == nil {
 		return 0, nil
@@ -2144,6 +2230,9 @@ type ChannelLatency struct {
 // GetChannelAvgLatency returns average request latency grouped by source (channel)
 // for the last N days.
 func GetChannelAvgLatency(days int) ([]ChannelLatency, error) {
+	if getGormDB() != nil {
+		return GormGetChannelAvgLatency(days)
+	}
 	db := getDB()
 	if db == nil {
 		return nil, fmt.Errorf("usage: database not initialised")
@@ -2176,6 +2265,9 @@ func GetChannelAvgLatency(days int) ([]ChannelLatency, error) {
 
 // CountTodayByKey returns the number of requests made by the given API key today (project timezone).
 func CountTodayByKey(apiKey string) (int64, error) {
+	if getGormDB() != nil {
+		return GormCountTodayByKey(apiKey)
+	}
 	db := getDB()
 	if db == nil {
 		return 0, nil
@@ -2193,6 +2285,9 @@ func CountTodayByKey(apiKey string) (int64, error) {
 
 // CountTotalByKey returns the total number of requests made by the given API key.
 func CountTotalByKey(apiKey string) (int64, error) {
+	if getGormDB() != nil {
+		return GormCountTotalByKey(apiKey)
+	}
 	db := getDB()
 	if db == nil {
 		return 0, nil

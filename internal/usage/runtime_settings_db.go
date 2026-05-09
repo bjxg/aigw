@@ -349,6 +349,9 @@ func payloadConfigMeaningful(payload config.PayloadConfig) bool {
 }
 
 func runtimeSettingPayload(key string) (json.RawMessage, bool) {
+	if getGormDB() != nil {
+		return GormRuntimeSettingPayload(key)
+	}
 	db := getDB()
 	if db == nil {
 		return nil, false
@@ -368,11 +371,17 @@ func runtimeSettingPayload(key string) (json.RawMessage, bool) {
 }
 
 func runtimeSettingExists(key string) bool {
+	if getGormDB() != nil {
+		return GormRuntimeSettingExists(key)
+	}
 	_, ok := runtimeSettingPayload(key)
 	return ok
 }
 
 func UpsertRuntimeSetting(key string, value any) error {
+	if getGormDB() != nil {
+		return GormUpsertRuntimeSetting(key, value)
+	}
 	db := getDB()
 	if db == nil {
 		return nil

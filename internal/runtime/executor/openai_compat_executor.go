@@ -289,9 +289,15 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
 				continue
 			}
 
-			// OpenAI-compatible streams are SSE: lines typically prefixed with "data: ".
+			// Strip the "data: " SSE prefix before translation; the handler will
+			// re-add the SSE "data: " wrapper when writing to the client.
+			payload := bytes.TrimSpace(line[5:]) // len("data:") == 5
+			if len(payload) == 0 {
+				continue
+			}
+
 			// Pass through translator; it yields one or more chunks for the target schema.
-			chunks := sdktranslator.TranslateStream(ctx, to, from, req.Model, opts.OriginalRequest, translated, bytes.Clone(line), &param)
+			chunks := sdktranslator.TranslateStream(ctx, to, from, req.Model, opts.OriginalRequest, translated, bytes.Clone(payload), &param)
 			for i := range chunks {
 				out <- cliproxyexecutor.StreamChunk{Payload: []byte(chunks[i])}
 			}

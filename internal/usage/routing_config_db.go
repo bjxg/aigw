@@ -73,6 +73,9 @@ func MigrateRoutingConfigFromConfig(cfg *config.Config, configFilePath string) b
 }
 
 func GetRoutingConfig() *config.RoutingConfig {
+	if getGormDB() != nil {
+		return GormGetRoutingConfig()
+	}
 	db := getDB()
 	if db == nil {
 		return nil
@@ -101,6 +104,9 @@ func GetRoutingConfig() *config.RoutingConfig {
 }
 
 func UpsertRoutingConfig(cfg config.RoutingConfig) error {
+	if getGormDB() != nil {
+		return GormUpsertRoutingConfig(cfg)
+	}
 	db := getDB()
 	if db == nil {
 		return nil

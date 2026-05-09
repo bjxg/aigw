@@ -66,6 +66,9 @@ func ListProxyPool() []config.ProxyPoolEntry {
 
 // GetProxyPoolEntry retrieves one reusable proxy by ID.
 func GetProxyPoolEntry(id string) *config.ProxyPoolEntry {
+	if getGormDB() != nil {
+		return GormGetProxyPoolEntry(id)
+	}
 	db := getDB()
 	if db == nil {
 		return nil

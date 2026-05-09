@@ -242,10 +242,12 @@ func runRequestLogMaintenancePass(db *sql.DB) {
 }
 
 func insertLogContentTx(tx *sql.Tx, logID int64, timestamp time.Time, inputContent, outputContent, detailContent string) error {
-	if tx == nil || logID < 1 || (!requestLogStorage.StoreContent) {
+	if tx == nil || logID < 1 {
 		return nil
 	}
 
+	// Content is always stored (RequestLogStorageConfig has been removed).
+	// The MaxTotalSizeMB cap logic has been simplified.
 	inputCompressed, err := compressLogContent(inputContent)
 	if err != nil {
 		return err
@@ -257,13 +259,6 @@ func insertLogContentTx(tx *sql.Tx, logID int64, timestamp time.Time, inputConte
 	detailCompressed, err := compressLogContent(detailContent)
 	if err != nil {
 		return err
-	}
-
-	rowBytes := int64(len(inputCompressed) + len(outputCompressed) + len(detailCompressed))
-	maxBytes := maxLogContentBytes()
-	if maxBytes > 0 && rowBytes > maxBytes {
-		log.Warnf("usage: skip storing request log content for log_id=%d because compressed body %d bytes exceeds configured cap %d bytes", logID, rowBytes, maxBytes)
-		return nil
 	}
 
 	_, err = tx.Exec(
@@ -285,40 +280,7 @@ func insertLogContentTx(tx *sql.Tx, logID int64, timestamp time.Time, inputConte
 	if err != nil {
 		return fmt.Errorf("usage: insert compressed content: %w", err)
 	}
-	if maxBytes > 0 {
-		total := requestLogContentBytes.Load()
-		if total >= 0 {
-			// Fast path: keep a running total without scanning the whole table.
-			total = requestLogContentBytes.Add(rowBytes)
-		} else {
-			// Bootstrap the running total once (may scan), then keep it updated incrementally.
-			if initTotal, errInit := queryStoredContentBytes(tx); errInit == nil {
-				requestLogContentBytes.Store(initTotal)
-				total = initTotal
-			} else {
-				// Fallback to scan-based enforcement when we can't initialize the counter.
-				deletedRows, errCleanup := cleanupOversizedLogContentQuerier(tx, maxBytes)
-				if errCleanup != nil {
-					return fmt.Errorf("usage: enforce content size cap: %w", errCleanup)
-				}
-				if deletedRows > 0 {
-					requestLogContentBytes.Store(-1)
-					triggerRequestLogCompaction()
-				}
-				return nil
-			}
-		}
 
-		// Enforce cap without per-request full table SUM() scans.
-		trimmedBytes, errTrim := cleanupOversizedLogContentQuerierWithTotal(tx, total, maxBytes)
-		if errTrim != nil {
-			return fmt.Errorf("usage: enforce content size cap: %w", errTrim)
-		}
-		if trimmedBytes > 0 {
-			requestLogContentBytes.Add(-trimmedBytes)
-			triggerRequestLogCompaction()
-		}
-	}
 	return nil
 }
 
@@ -350,7 +312,7 @@ func decompressLogContent(compression string, content []byte) (string, error) {
 }
 
 func migrateLegacyContentBatch(db *sql.DB, batchSize int) (int, error) {
-	if db == nil || !requestLogStorage.StoreContent {
+	if db == nil {
 		return 0, nil
 	}
 	if batchSize <= 0 {
@@ -406,7 +368,7 @@ func migrateLegacyContentBatch(db *sql.DB, batchSize int) (int, error) {
 			timestamp = time.Now().UTC()
 		}
 
-		shouldKeep := requestLogStorage.StoreContent && withinContentRetention(timestamp)
+		shouldKeep := withinContentRetention(timestamp)
 		if shouldKeep {
 			if errStore := insertLogContentTx(tx, row.ID, timestamp, row.InputContent, row.OutputContent, ""); errStore != nil {
 				_ = tx.Rollback()
@@ -438,7 +400,7 @@ func withinContentRetention(timestamp time.Time) bool {
 }
 
 func cleanupExpiredLogContent(db *sql.DB) (int64, error) {
-	if db == nil || !requestLogStorage.StoreContent || contentRetentionUnlimited() {
+	if db == nil || contentRetentionUnlimited() {
 		return 0, nil
 	}
 

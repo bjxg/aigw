@@ -44,18 +44,14 @@ debug: true
 				Entrypoint: "cli",
 			},
 		},
-		OAuthModelAlias: map[string][]config.OAuthModelAlias{
-			"antigravity": {{Name: "rev19-uic3-1p", Alias: "gemini-2.5-computer-use-preview-10-2025"}},
-		},
 	}
 
-	if migrated := MigrateRuntimeSettingsFromConfig(cfg, configPath); migrated != 3 {
-		t.Fatalf("MigrateRuntimeSettingsFromConfig = %d, want 3", migrated)
+	if migrated := MigrateRuntimeSettingsFromConfig(cfg, configPath); migrated != 2 {
+		t.Fatalf("MigrateRuntimeSettingsFromConfig = %d, want 2", migrated)
 	}
 
 	cfg.KimiHeaderDefaults = config.KimiHeaderDefaults{}
 	cfg.IdentityFingerprint = config.IdentityFingerprintConfig{}
-	cfg.OAuthModelAlias = nil
 	if !ApplyStoredRuntimeSettings(cfg) {
 		t.Fatal("ApplyStoredRuntimeSettings returned false")
 	}
@@ -68,15 +64,12 @@ debug: true
 	if !cfg.IdentityFingerprint.Claude.Enabled || cfg.IdentityFingerprint.Claude.UserAgent != "claude-cli/2.1.88 (external, cli)" {
 		t.Fatalf("IdentityFingerprint.Claude = %#v", cfg.IdentityFingerprint.Claude)
 	}
-	if got := cfg.OAuthModelAlias["antigravity"]; len(got) != 1 || got[0].Alias != "gemini-2.5-computer-use-preview-10-2025" {
-		t.Fatalf("OAuthModelAlias = %#v", cfg.OAuthModelAlias)
-	}
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	for _, forbidden := range []string{"kimi-header-defaults:", "identity-fingerprint:", "oauth-model-alias:"} {
+	for _, forbidden := range []string{"kimi-header-defaults:", "identity-fingerprint:"} {
 		if strings.Contains(string(data), forbidden) {
 			t.Fatalf("%s should be removed from YAML after migration:\n%s", forbidden, string(data))
 		}

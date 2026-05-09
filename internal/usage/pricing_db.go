@@ -135,6 +135,9 @@ func GetAllModelPricing() map[string]ModelPricingRow {
 
 // DeleteModelPricing removes a model's pricing.
 func DeleteModelPricing(modelID string) error {
+	if getGormDB() != nil {
+		return GormDeleteModelPricing(modelID)
+	}
 	db := getDB()
 	if db == nil {
 		return fmt.Errorf("usage: database not initialised")
@@ -204,6 +207,9 @@ func CalculateCost(modelID string, inputTokens, outputTokens, cachedTokens int64
 
 // QueryTotalCostByKey returns the total accumulated cost for a given API key.
 func QueryTotalCostByKey(apiKey string) (float64, error) {
+	if getGormDB() != nil {
+		return GormQueryTotalCostByKey(apiKey)
+	}
 	db := getDB()
 	if db == nil {
 		return 0, nil

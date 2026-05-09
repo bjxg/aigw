@@ -55,6 +55,9 @@ func initAPIKeyPermissionProfilesTable(db *sql.DB) {
 }
 
 func ListAPIKeyPermissionProfiles() []APIKeyPermissionProfileRow {
+	if getGormDB() != nil {
+		return GormListAPIKeyPermissionProfiles()
+	}
 	db := getDB()
 	if db == nil {
 		return nil
@@ -81,6 +84,9 @@ func ListAPIKeyPermissionProfiles() []APIKeyPermissionProfileRow {
 }
 
 func ReplaceAllAPIKeyPermissionProfiles(profiles []APIKeyPermissionProfileRow) error {
+	if getGormDB() != nil {
+		return GormReplaceAllAPIKeyPermissionProfiles(profiles)
+	}
 	db := getDB()
 	if db == nil {
 		return fmt.Errorf("database not initialised")
@@ -146,6 +152,9 @@ func ReplaceAllAPIKeyPermissionProfiles(profiles []APIKeyPermissionProfileRow) e
 }
 
 func MigrateAPIKeyPermissionProfilesFromYAML(configFilePath string) int {
+	if getGormDB() != nil {
+		return GormMigrateAPIKeyPermissionProfilesFromYAML(configFilePath)
+	}
 	db := getDB()
 	if db == nil || strings.TrimSpace(configFilePath) == "" {
 		return 0

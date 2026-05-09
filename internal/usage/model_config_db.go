@@ -445,6 +445,9 @@ func GetModelConfig(modelID string) (ModelConfigRow, bool) {
 }
 
 func UpsertModelConfig(row ModelConfigRow) error {
+	if getGormDB() != nil {
+		return GormUpsertModelConfig(row)
+	}
 	db := getDB()
 	if db == nil {
 		return fmt.Errorf("usage: database not initialised")
@@ -510,6 +513,9 @@ func UpsertModelConfig(row ModelConfigRow) error {
 }
 
 func DeleteModelConfig(modelID string) error {
+	if getGormDB() != nil {
+		return GormDeleteModelConfig(modelID)
+	}
 	db := getDB()
 	if db == nil {
 		return fmt.Errorf("usage: database not initialised")
@@ -564,6 +570,9 @@ func GetModelOwnerPreset(value string) (ModelOwnerPresetRow, bool) {
 }
 
 func UpsertModelOwnerPreset(row ModelOwnerPresetRow) error {
+	if getGormDB() != nil {
+		return GormUpsertModelOwnerPreset(row)
+	}
 	db := getDB()
 	if db == nil {
 		return fmt.Errorf("usage: database not initialised")
@@ -598,6 +607,9 @@ func UpsertModelOwnerPreset(row ModelOwnerPresetRow) error {
 }
 
 func ReplaceModelOwnerPresets(rows []ModelOwnerPresetRow) error {
+	if getGormDB() != nil {
+		return GormReplaceModelOwnerPresets(rows)
+	}
 	db := getDB()
 	if db == nil {
 		return fmt.Errorf("usage: database not initialised")
