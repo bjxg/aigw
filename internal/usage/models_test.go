@@ -38,8 +38,8 @@ func setupGormTestDB(t *testing.T) *gorm.DB {
 
 func TestAllModels_ReturnsAllModels(t *testing.T) {
 	models := AllModels()
-	if len(models) != 13 {
-		t.Errorf("AllModels() returned %d models, want 13", len(models))
+	if len(models) != 11 {
+		t.Errorf("AllModels() returned %d models, want 11", len(models))
 	}
 }
 
@@ -64,8 +64,6 @@ func TestAutoMigrate_AllModels(t *testing.T) {
 		"routing_config",
 		"proxy_pool",
 		"runtime_settings",
-		"auth_file_quota_snapshots",
-		"auth_file_quota_snapshot_points",
 	}
 
 	for _, table := range expectedTables {
@@ -237,35 +235,6 @@ func TestRoutingConfig_CRUD(t *testing.T) {
 	}
 	if got.Payload != `{"strategy": "round-robin"}` {
 		t.Errorf("got.Payload = %q, want round-robin payload", got.Payload)
-	}
-}
-
-func TestAuthFileQuotaSnapshot_CRUD(t *testing.T) {
-	d := setupGormTestDB(t)
-	err := db.AutoMigrate(d, &AuthFileQuotaSnapshot{})
-	if err != nil {
-		t.Fatalf("AutoMigrate() error = %v", err)
-	}
-
-	percent := float64(75.5)
-	snap := &AuthFileQuotaSnapshot{
-		DateKey:    "2025-01-01",
-		AuthIndex:  "auth-0",
-		QuotaKey:   "quota-key",
-		Provider:   "openai",
-		Percent:    &percent,
-		RecordedAt: "2025-01-01T12:00:00Z",
-	}
-	if err := d.Create(snap).Error; err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
-
-	var got AuthFileQuotaSnapshot
-	if err := d.First(&got, "date_key = ? AND auth_index = ? AND quota_key = ?", "2025-01-01", "auth-0", "quota-key").Error; err != nil {
-		t.Fatalf("First() error = %v", err)
-	}
-	if got.Percent == nil || *got.Percent != 75.5 {
-		t.Errorf("got.Percent = %v, want 75.5", got.Percent)
 	}
 }
 

@@ -207,39 +207,6 @@ type RuntimeSetting struct {
 // TableName overrides the table name.
 func (RuntimeSetting) TableName() string { return "runtime_settings" }
 
-// --- AuthFileQuotaSnapshot ---
-
-// AuthFileQuotaSnapshot maps to the auth_file_quota_snapshots table.
-type AuthFileQuotaSnapshot struct {
-	DateKey    string   `gorm:"primaryKey;not null;index:idx_quota_snapshots_date" json:"date_key"`
-	AuthIndex  string   `gorm:"primaryKey;not null;index:idx_quota_snapshots_auth" json:"auth_index"`
-	QuotaKey   string   `gorm:"primaryKey;not null" json:"quota_key"`
-	Provider   string   `gorm:"not null;default:''" json:"provider"`
-	Percent    *float64 `gorm:"" json:"percent"`
-	RecordedAt string   `gorm:"not null" json:"recorded_at"`
-}
-
-// TableName overrides the table name.
-func (AuthFileQuotaSnapshot) TableName() string { return "auth_file_quota_snapshots" }
-
-// --- AuthFileQuotaSnapshotPoint ---
-
-// AuthFileQuotaSnapshotPoint maps to the auth_file_quota_snapshot_points table.
-type AuthFileQuotaSnapshotPoint struct {
-	ID            int64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	RecordedAt    string   `gorm:"not null;index:idx_quota_snapshot_points_auth_time;index:idx_quota_snapshot_points_auth_key_time" json:"recorded_at"`
-	AuthIndex     string   `gorm:"not null;default:'';index:idx_quota_snapshot_points_auth_time;index:idx_quota_snapshot_points_auth_key_time" json:"auth_index"`
-	Provider      string   `gorm:"not null;default:''" json:"provider"`
-	QuotaKey      string   `gorm:"not null;index:idx_quota_snapshot_points_auth_key_time" json:"quota_key"`
-	QuotaLabel    string   `gorm:"not null;default:''" json:"quota_label"`
-	Percent       *float64 `gorm:"" json:"percent"`
-	ResetAt       *string  `gorm:"" json:"reset_at"`
-	WindowSeconds int64    `gorm:"not null;default:0" json:"window_seconds"`
-}
-
-// TableName overrides the table name.
-func (AuthFileQuotaSnapshotPoint) TableName() string { return "auth_file_quota_snapshot_points" }
-
 // --- JSONStringList helper type ---
 
 // JSONStringList is a helper type for storing []string as JSON in TEXT columns.
@@ -296,8 +263,6 @@ func AllModels() []interface{} {
 		&RoutingConfig{},
 		&ProxyPool{},
 		&RuntimeSetting{},
-		&AuthFileQuotaSnapshot{},
-		&AuthFileQuotaSnapshotPoint{},
 	}
 }
 

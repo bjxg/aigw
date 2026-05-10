@@ -136,11 +136,4 @@ type PermissionProfileRepository interface {
 	ReplaceAll(ctx context.Context, profiles []APIKeyPermissionProfileRow) error
 }
 
-// QuotaSnapshotRepository defines the interface for quota snapshot persistence.
-type QuotaSnapshotRepository interface {
-	RecordDaily(ctx context.Context, authIndex, provider string, quotas map[string]*float64) error
-	RecordPoints(ctx context.Context, authIndex, provider string, points []QuotaSnapshotPoint) error
-	QueryDailyByAuthIndexes(ctx context.Context, authIndexes []string, quotaKey string, days int) ([]DailyQuotaPoint, error)
-	QueryPoints(ctx context.Context, authIndex string, start, end interface{}) ([]QuotaSnapshotPoint, error)
-	QuerySeries(ctx context.Context, authIndex string, start, end interface{}) ([]QuotaSnapshotSeries, error)
-}
+
