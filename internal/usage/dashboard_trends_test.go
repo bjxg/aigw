@@ -12,12 +12,12 @@ func TestQueryDashboardTrendsReturnsFixedDailyBuckets(t *testing.T) {
 
 	now := time.Now().UTC()
 	yesterday := now.AddDate(0, 0, -1)
-	InsertLog("", "", "gpt-test", "codex", "codex", "auth-1", false, yesterday, 120, 20, TokenStats{
+	InsertLog(0, "", "gpt-test", "codex", "codex", "auth-1", false, yesterday, 120, 20, TokenStats{
 		InputTokens:  10,
 		OutputTokens: 20,
 		TotalTokens:  30,
 	}, "", "")
-	InsertLog("", "", "gpt-test", "codex", "codex", "auth-1", true, now, 180, 30, TokenStats{
+	InsertLog(0, "", "gpt-test", "codex", "codex", "auth-1", true, now, 180, 30, TokenStats{
 		InputTokens:  40,
 		OutputTokens: 50,
 		TotalTokens:  90,
@@ -77,22 +77,22 @@ func TestQueryDashboardTrendsReturnsRecentMinuteThroughputBuckets(t *testing.T) 
 	sixMinutesAgo := now.Add(-6 * time.Minute)
 	eightMinutesAgo := now.Add(-8 * time.Minute)
 
-	InsertLog("", "", "gpt-test", "codex", "codex", "auth-1", false, now.Add(15*time.Second), 100, 20, TokenStats{
+	InsertLog(0, "", "gpt-test", "codex", "codex", "auth-1", false, now.Add(15*time.Second), 100, 20, TokenStats{
 		InputTokens:  40,
 		OutputTokens: 50,
 		TotalTokens:  90,
 	}, "", "")
-	InsertLog("", "", "gpt-test", "codex", "codex", "auth-1", false, twoMinutesAgo.Add(25*time.Second), 90, 20, TokenStats{
+	InsertLog(0, "", "gpt-test", "codex", "codex", "auth-1", false, twoMinutesAgo.Add(25*time.Second), 90, 20, TokenStats{
 		InputTokens:  10,
 		OutputTokens: 20,
 		TotalTokens:  30,
 	}, "", "")
-	InsertLog("", "", "gpt-test", "codex", "codex", "auth-1", false, sixMinutesAgo.Add(35*time.Second), 80, 20, TokenStats{
+	InsertLog(0, "", "gpt-test", "codex", "codex", "auth-1", false, sixMinutesAgo.Add(35*time.Second), 80, 20, TokenStats{
 		InputTokens:  20,
 		OutputTokens: 30,
 		TotalTokens:  50,
 	}, "", "")
-	InsertLog("", "", "gpt-test", "codex", "codex", "auth-1", false, eightMinutesAgo.Add(45*time.Second), 70, 20, TokenStats{
+	InsertLog(0, "", "gpt-test", "codex", "codex", "auth-1", false, eightMinutesAgo.Add(45*time.Second), 70, 20, TokenStats{
 		InputTokens:  30,
 		OutputTokens: 40,
 		TotalTokens:  70,

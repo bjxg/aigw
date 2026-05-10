@@ -67,7 +67,7 @@ func TestQueryDailyCallsByAuthIndexesBucketsByProjectTimezone(t *testing.T) {
 
 	nowLocal := time.Now().In(loc)
 	localToday := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 30, 0, 0, loc)
-	InsertLog("", "", "gpt-5.4", "codex", "Codex", "auth-local-day", false, localToday, 1, 1, TokenStats{TotalTokens: 1}, "", "")
+	InsertLog(0, "", "gpt-5.4", "codex", "Codex", "auth-local-day", false, localToday, 1, 1, TokenStats{TotalTokens: 1}, "", "")
 
 	points, err := QueryDailyCallsByAuthIndexes([]string{"auth-local-day"}, 1)
 	if err != nil {
@@ -139,21 +139,21 @@ func TestQueryLogsSupportsSystemRequestLogFilterValue(t *testing.T) {
 	initTestUsageDB(t, config.RequestLogStorageConfig{})
 
 	now := time.Now().UTC()
-	InsertLog("POST /image-generation/test", "", "gpt-image-2", "codex", "Codex", "auth-1", false, now, 100, 10, TokenStats{
+	InsertLog(0, "", "gpt-image-2", "codex", "Codex", "auth-1", false, now, 100, 10, TokenStats{
 		InputTokens: 1, OutputTokens: 1, TotalTokens: 2,
 	}, "", "")
-	InsertLog("/v0/management/image-generation/test", "", "gpt-image-2", "codex", "Codex", "auth-2", true, now, 120, 12, TokenStats{
+	InsertLog(0, "", "gpt-image-2", "codex", "Codex", "auth-2", true, now, 120, 12, TokenStats{
 		InputTokens: 1, OutputTokens: 1, TotalTokens: 2,
 	}, "", "")
-	InsertLog("sk-live-123", "Primary", "gpt-5.4", "codex", "Codex", "auth-3", false, now, 140, 14, TokenStats{
+	InsertLog(1, "Primary", "gpt-5.4", "codex", "Codex", "auth-3", false, now, 140, 14, TokenStats{
 		InputTokens: 1, OutputTokens: 1, TotalTokens: 2,
 	}, "", "")
 
 	result, err := QueryLogs(LogQueryParams{
-		Page:   1,
-		Size:   10,
-		Days:   1,
-		APIKey: systemRequestLogFilterValue,
+		Page:     1,
+		Size:     10,
+		Days:     1,
+		APIKeyID: -1,
 	})
 	if err != nil {
 		t.Fatalf("QueryLogs() error = %v", err)
@@ -162,8 +162,8 @@ func TestQueryLogsSupportsSystemRequestLogFilterValue(t *testing.T) {
 		t.Fatalf("system filter items = %d, want 2", len(result.Items))
 	}
 	for _, item := range result.Items {
-		if item.APIKey == "sk-live-123" {
-			t.Fatalf("unexpected non-system api key in system filter result: %q", item.APIKey)
+		if item.APIKeyID != 0 {
+			t.Fatalf("unexpected non-system api_key_id in system filter result: %d", item.APIKeyID)
 		}
 	}
 }
@@ -177,7 +177,7 @@ func TestQueryLogContentKeepsMissingFailedOutputEmpty(t *testing.T) {
 
 	now := time.Now().UTC()
 	input := `{"model":"gpt-image-2","prompt":"draw a fox"}`
-	InsertLog("POST /image-generation/test", "", "gpt-image-2", "codex", "Codex", "auth-1", true, now, 100, 10, TokenStats{}, input, "")
+	InsertLog(0, "", "gpt-image-2", "codex", "Codex", "auth-1", true, now, 100, 10, TokenStats{}, input, "")
 
 	result, err := QueryLogs(LogQueryParams{Page: 1, Size: 10, Days: 1})
 	if err != nil {
@@ -216,7 +216,7 @@ func TestQueryLogContentPartReturnsStoredRequestDetails(t *testing.T) {
 
 	now := time.Now().UTC()
 	details := `{"client":{"ip":"203.0.113.8","headers":{"Authorization":"Bearer sk-client-plaintext"}},"upstream":{"headers":{"Authorization":"Bearer sk-upstream-plaintext"}},"response":{"headers":{"X-Request-Id":"req-plaintext"}}}`
-	InsertLogWithDetails("sk-test", "Primary", "gpt-test", "codex", "Codex", "auth-1", false, now, 100, 10, TokenStats{
+	InsertLogWithDetails(1, "Primary", "gpt-test", "codex", "Codex", "auth-1", false, now, 100, 10, TokenStats{
 		InputTokens: 1, OutputTokens: 1, TotalTokens: 2,
 	}, `{"messages":[]}`, `{"choices":[]}`, details)
 
@@ -252,7 +252,7 @@ func TestInitDBMigratesFirstTokenColumn(t *testing.T) {
 		CREATE TABLE request_logs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			timestamp DATETIME NOT NULL,
-			api_key TEXT NOT NULL DEFAULT '',
+			api_key_id INTEGER NOT NULL DEFAULT 0,
 			api_key_name TEXT NOT NULL DEFAULT '',
 			model TEXT NOT NULL DEFAULT '',
 			source TEXT NOT NULL DEFAULT '',
@@ -319,7 +319,7 @@ func TestInsertLogStoresCompressedContentOutsideMainTable(t *testing.T) {
 	input := `{"messages":[{"role":"user","content":"hello world"}]}`
 	output := `{"id":"resp_123","output":"done"}`
 
-	InsertLog("sk-test", "", "gpt-test", "source", "channel", "auth-1", false, timestamp, 123, 45, TokenStats{
+	InsertLog(1, "", "gpt-test", "source", "channel", "auth-1", false, timestamp, 123, 45, TokenStats{
 		InputTokens:  10,
 		OutputTokens: 20,
 		TotalTokens:  30,
@@ -388,12 +388,12 @@ func TestMigrateLegacyContentBatchMovesContentOutOfMainTable(t *testing.T) {
 
 	result, err := db.Exec(
 		`INSERT INTO request_logs
-			(timestamp, api_key, model, source, channel_name, auth_index,
+			(timestamp, api_key_id, model, source, channel_name, auth_index,
 			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens,
 			 cost, input_content, output_content)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		timestamp.Format(time.RFC3339Nano),
-		"sk-legacy", "legacy-model", "legacy-source", "legacy-channel", "auth-legacy",
+		0, "legacy-model", "legacy-source", "legacy-channel", "auth-legacy",
 		0, 10, 1, 2, 0, 0, 3, 0, input, output,
 	)
 	if err != nil {
@@ -444,11 +444,11 @@ func TestCleanupExpiredLogContentKeepsMetadataRows(t *testing.T) {
 	timestamp := time.Now().UTC().AddDate(0, 0, -40)
 	result, err := db.Exec(
 		`INSERT INTO request_logs
-			(timestamp, api_key, model, source, channel_name, auth_index,
+			(timestamp, api_key_id, model, source, channel_name, auth_index,
 			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		timestamp.Format(time.RFC3339Nano),
-		"sk-old", "old-model", "source", "channel", "auth-old",
+		1, "old-model", "source", "channel", "auth-old",
 		0, 5, 1, 1, 0, 0, 2, 0,
 	)
 	if err != nil {
@@ -503,7 +503,7 @@ func TestGetRequestLogStorageBytesCountsCompressedAndLegacyContent(t *testing.T)
 	input := `{"messages":[{"role":"user","content":"hello world"}]}`
 	output := `{"id":"resp_123","output":"done"}`
 
-	InsertLog("sk-test", "", "gpt-test", "source", "channel", "auth-1", false, timestamp, 123, 33, TokenStats{
+	InsertLog(1, "", "gpt-test", "source", "channel", "auth-1", false, timestamp, 123, 33, TokenStats{
 		InputTokens:  10,
 		OutputTokens: 20,
 		TotalTokens:  30,
@@ -524,12 +524,12 @@ func TestGetRequestLogStorageBytesCountsCompressedAndLegacyContent(t *testing.T)
 	legacyOutput := "legacy-inline-output"
 	if _, err := db.Exec(
 		`INSERT INTO request_logs
-			(timestamp, api_key, model, source, channel_name, auth_index,
+			(timestamp, api_key_id, model, source, channel_name, auth_index,
 			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens,
 			 cost, input_content, output_content)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		timestamp.Format(time.RFC3339Nano),
-		"sk-legacy", "legacy-model", "legacy-source", "legacy-channel", "auth-legacy",
+		0, "legacy-model", "legacy-source", "legacy-channel", "auth-legacy",
 		0, 10, 1, 2, 0, 0, 3, 0, legacyInput, legacyOutput,
 	); err != nil {
 		t.Fatalf("insert legacy row: %v", err)
@@ -561,12 +561,12 @@ func TestMigrateLegacyContentBatchKeepsAllContentWhenRetentionUnlimited(t *testi
 
 	result, err := db.Exec(
 		`INSERT INTO request_logs
-			(timestamp, api_key, model, source, channel_name, auth_index,
+			(timestamp, api_key_id, model, source, channel_name, auth_index,
 			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens,
 			 cost, input_content, output_content)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		timestamp.Format(time.RFC3339Nano),
-		"sk-legacy", "legacy-model", "legacy-source", "legacy-channel", "auth-legacy",
+		0, "legacy-model", "legacy-source", "legacy-channel", "auth-legacy",
 		0, 10, 1, 2, 0, 0, 3, 0, input, output,
 	)
 	if err != nil {
@@ -611,12 +611,12 @@ func TestMigrateLegacyContentBatchPreservesInlineContentWhenStorageDisabled(t *t
 
 	result, err := db.Exec(
 		`INSERT INTO request_logs
-			(timestamp, api_key, model, source, channel_name, auth_index,
+			(timestamp, api_key_id, model, source, channel_name, auth_index,
 			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens,
 			 cost, input_content, output_content)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		timestamp.Format(time.RFC3339Nano),
-		"sk-inline", "inline-model", "inline-source", "inline-channel", "auth-inline",
+		0, "inline-model", "inline-source", "inline-channel", "auth-inline",
 		0, 10, 1, 2, 0, 0, 3, 0, input, output,
 	)
 	if err != nil {
@@ -674,11 +674,11 @@ func TestCleanupExpiredLogContentSkipsWhenStorageDisabledOrRetentionUnlimited(t 
 			timestamp := time.Now().UTC().AddDate(0, 0, -40)
 			result, err := db.Exec(
 				`INSERT INTO request_logs
-					(timestamp, api_key, model, source, channel_name, auth_index,
+					(timestamp, api_key_id, model, source, channel_name, auth_index,
 					 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
 				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				timestamp.Format(time.RFC3339Nano),
-				"sk-old", "old-model", "source", "channel", "auth-old",
+				1, "old-model", "source", "channel", "auth-old",
 				0, 5, 1, 1, 0, 0, 2, 0,
 			)
 			if err != nil {
@@ -754,15 +754,15 @@ func TestCleanupOversizedLogContentPrunesOldestRows(t *testing.T) {
 		t.Fatalf("test payload compressed too small to exceed cap: %d", rowBytes)
 	}
 
-	insertRawContentRow := func(ts time.Time, apiKey string) int64 {
+	insertRawContentRow := func(ts time.Time, apiKeyID int64) int64 {
 		t.Helper()
 		result, err := db.Exec(
 			`INSERT INTO request_logs
-				(timestamp, api_key, model, source, channel_name, auth_index,
+				(timestamp, api_key_id, model, source, channel_name, auth_index,
 				 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			ts.Format(time.RFC3339Nano),
-			apiKey, "model", "source", "channel", apiKey,
+			apiKeyID, "model", "source", "channel", "auth-1",
 			0, 5, 1, 1, 0, 0, 2, 0,
 		)
 		if err != nil {
@@ -786,9 +786,9 @@ func TestCleanupOversizedLogContentPrunesOldestRows(t *testing.T) {
 		return logID
 	}
 
-	oldestID := insertRawContentRow(time.Now().UTC().Add(-3*time.Hour), "sk-oldest")
-	_ = insertRawContentRow(time.Now().UTC().Add(-2*time.Hour), "sk-middle")
-	newestID := insertRawContentRow(time.Now().UTC().Add(-1*time.Hour), "sk-newest")
+	oldestID := insertRawContentRow(time.Now().UTC().Add(-3*time.Hour), 1)
+	_ = insertRawContentRow(time.Now().UTC().Add(-2*time.Hour), 1)
+	newestID := insertRawContentRow(time.Now().UTC().Add(-1*time.Hour), 1)
 
 	deleted, err := cleanupOversizedLogContent(db, maxBytes)
 	if err != nil {
@@ -839,11 +839,11 @@ func TestInsertLogContentTxSkipsSingleRowLargerThanSizeCap(t *testing.T) {
 
 	result, err := db.Exec(
 		`INSERT INTO request_logs
-			(timestamp, api_key, model, source, channel_name, auth_index,
+			(timestamp, api_key_id, model, source, channel_name, auth_index,
 			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		time.Now().UTC().Format(time.RFC3339Nano),
-		"sk-large", "model", "source", "channel", "auth-large",
+		1, "model", "source", "channel", "auth-large",
 		0, 5, 1, 1, 0, 0, 2, 0,
 	)
 	if err != nil {
@@ -855,7 +855,7 @@ func TestInsertLogContentTxSkipsSingleRowLargerThanSizeCap(t *testing.T) {
 	}
 
 	// Use GORM path since GORM is now active
-	GormInsertLog("sk-large", "", "model", "source", "channel", "auth-large",
+	GormInsertLog(1, "", "model", "source", "channel", "auth-large",
 		false, time.Now().UTC(), 5, 1, TokenStats{InputTokens: 1, TotalTokens: 2}, payload, "", "")
 
 	// Verify content was stored (previously, content exceeding MaxTotalSizeMB was skipped)
@@ -875,18 +875,31 @@ func TestDeleteLogsByAPIKeyRemovesLogsAndContent(t *testing.T) {
 		CleanupIntervalMinutes: 1440,
 	})
 
+	// Create API key entries so IDs are assigned
+	if err := UpsertAPIKey(APIKeyRow{Key: "sk-target", Name: "Target"}); err != nil {
+		t.Fatalf("UpsertAPIKey(sk-target): %v", err)
+	}
+	if err := UpsertAPIKey(APIKeyRow{Key: "sk-other", Name: "Other"}); err != nil {
+		t.Fatalf("UpsertAPIKey(sk-other): %v", err)
+	}
+	targetRow := GetAPIKey("sk-target")
+	otherRow := GetAPIKey("sk-other")
+	if targetRow == nil || otherRow == nil {
+		t.Fatalf("failed to look up API keys after upsert")
+	}
+
 	timestamp := time.Now().UTC()
 	input := `{"messages":[{"role":"user","content":"hello"}]}`
 	output := `{"id":"resp_1","output":"done"}`
 
-	// Insert 3 logs: 2 for "sk-target", 1 for "sk-other"
-	InsertLog("sk-target", "", "gpt-test", "source", "channel", "auth-1", false, timestamp, 100, 10, TokenStats{
+	// Insert 3 logs: 2 for target key, 1 for other key
+	InsertLog(targetRow.ID, "Target", "gpt-test", "source", "channel", "auth-1", false, timestamp, 100, 10, TokenStats{
 		InputTokens: 10, OutputTokens: 20, TotalTokens: 30,
 	}, input, output)
-	InsertLog("sk-target", "", "gpt-test", "source", "channel", "auth-1", false, timestamp, 200, 20, TokenStats{
+	InsertLog(targetRow.ID, "Target", "gpt-test", "source", "channel", "auth-1", false, timestamp, 200, 20, TokenStats{
 		InputTokens: 15, OutputTokens: 25, TotalTokens: 40,
 	}, input, output)
-	InsertLog("sk-other", "", "gpt-test", "source", "channel", "auth-2", false, timestamp, 300, 30, TokenStats{
+	InsertLog(otherRow.ID, "Other", "gpt-test", "source", "channel", "auth-2", false, timestamp, 300, 30, TokenStats{
 		InputTokens: 5, OutputTokens: 10, TotalTokens: 15,
 	}, input, output)
 
@@ -899,16 +912,16 @@ func TestDeleteLogsByAPIKeyRemovesLogsAndContent(t *testing.T) {
 		t.Fatalf("expected 3 log rows, got %d", len(result.Items))
 	}
 
-	// Delete logs for sk-target
-	deleted, err := DeleteLogsByAPIKey("sk-target")
+	// Delete logs for target key by ID
+	deleted, err := DeleteLogsByAPIKeyID(targetRow.ID)
 	if err != nil {
-		t.Fatalf("DeleteLogsByAPIKey() error = %v", err)
+		t.Fatalf("DeleteLogsByAPIKeyID() error = %v", err)
 	}
 	if deleted != 2 {
-		t.Fatalf("DeleteLogsByAPIKey() deleted = %d, want 2", deleted)
+		t.Fatalf("DeleteLogsByAPIKeyID() deleted = %d, want 2", deleted)
 	}
 
-	// Verify only sk-other remains
+	// Verify only other key's logs remain
 	result, err = QueryLogs(LogQueryParams{Page: 1, Size: 10, Days: 1})
 	if err != nil {
 		t.Fatalf("QueryLogs() after delete error = %v", err)
@@ -916,19 +929,19 @@ func TestDeleteLogsByAPIKeyRemovesLogsAndContent(t *testing.T) {
 	if len(result.Items) != 1 {
 		t.Fatalf("expected 1 log row after delete, got %d", len(result.Items))
 	}
-	if result.Items[0].APIKey != "sk-other" {
-		t.Fatalf("remaining log api_key = %q, want sk-other", result.Items[0].APIKey)
+	if result.Items[0].APIKeyID != otherRow.ID {
+		t.Fatalf("remaining log api_key_id = %d, want %d", result.Items[0].APIKeyID, otherRow.ID)
 	}
 
-	// Verify content rows are also deleted for sk-target
+	// Verify content rows are also deleted for target key
 	db := getDB()
 	var contentCount int
 	err = db.QueryRow("SELECT COUNT(*) FROM request_log_content").Scan(&contentCount)
 	if err != nil {
 		t.Fatalf("count content rows: %v", err)
 	}
-	// Only sk-other's content should remain (1 row)
+	// Only other key's content should remain (1 row)
 	if contentCount != 1 {
-		t.Fatalf("expected 1 content row (sk-other only), got %d", contentCount)
+		t.Fatalf("expected 1 content row (other key only), got %d", contentCount)
 	}
 }

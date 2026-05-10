@@ -228,10 +228,9 @@ func TestGetUsageLogs_EmptyDB_DoesNotReturnNullSlices(t *testing.T) {
 	var payload struct {
 		Items   []any `json:"items"`
 		Filters struct {
-			APIKeys     []string          `json:"api_keys"`
-			APIKeyNames map[string]string `json:"api_key_names"`
-			Models      []string          `json:"models"`
-			Channels    []string          `json:"channels"`
+			APIKeys  []any   `json:"api_keys"`
+			Models   []string `json:"models"`
+			Channels []string `json:"channels"`
 		} `json:"filters"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
@@ -249,9 +248,6 @@ func TestGetUsageLogs_EmptyDB_DoesNotReturnNullSlices(t *testing.T) {
 	}
 	if payload.Filters.Channels == nil {
 		t.Fatalf("filters.channels is null; expected []")
-	}
-	if payload.Filters.APIKeyNames == nil {
-		t.Fatalf("filters.api_key_names is null; expected {}")
 	}
 }
 
@@ -478,9 +474,9 @@ func TestGetAuthFileTrendUsesWeeklyResetCycleForRequestTotal(t *testing.T) {
 	resetAt := now.Add(4 * 24 * time.Hour)
 	cycleStart := resetAt.Add(-7 * 24 * time.Hour)
 
-	usage.InsertLog("", "", "gpt-5.4", "codex", "GptPro2", auth.Index, false, cycleStart.Add(-time.Hour), 1, 1, usage.TokenStats{TotalTokens: 1}, "", "")
-	usage.InsertLog("", "", "gpt-5.4", "codex", "GptPro2", auth.Index, false, cycleStart.Add(time.Hour), 1, 1, usage.TokenStats{TotalTokens: 1}, "", "")
-	usage.InsertLog("", "", "gpt-5.4", "codex", "GptPro2", auth.Index, false, now.Add(-time.Hour), 1, 1, usage.TokenStats{TotalTokens: 1}, "", "")
+	usage.InsertLog(0, "", "gpt-5.4", "codex", "GptPro2", auth.Index, false, cycleStart.Add(-time.Hour), 1, 1, usage.TokenStats{TotalTokens: 1}, "", "")
+	usage.InsertLog(0, "", "gpt-5.4", "codex", "GptPro2", auth.Index, false, cycleStart.Add(time.Hour), 1, 1, usage.TokenStats{TotalTokens: 1}, "", "")
+	usage.InsertLog(0, "", "gpt-5.4", "codex", "GptPro2", auth.Index, false, now.Add(-time.Hour), 1, 1, usage.TokenStats{TotalTokens: 1}, "", "")
 
 	weeklyRemaining := 93.0
 	if err := usage.RecordQuotaSnapshotPoints(auth.Index, "codex", []usage.QuotaSnapshotPoint{

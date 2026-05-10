@@ -18,6 +18,7 @@ import (
 // apiKeyRowToGORM converts an APIKeyRow to a GORM APIKey model.
 func apiKeyRowToGORM(row APIKeyRow) APIKey {
 	return APIKey{
+		ID:                   row.ID,
 		Key:                  row.Key,
 		Name:                 row.Name,
 		Disabled:             row.Disabled,
@@ -39,6 +40,7 @@ func apiKeyRowToGORM(row APIKeyRow) APIKey {
 // gormToAPIKeyRow converts a GORM APIKey model to an APIKeyRow.
 func gormToAPIKeyRow(m APIKey) APIKeyRow {
 	return APIKeyRow{
+		ID:                   m.ID,
 		Key:                  m.Key,
 		Name:                 m.Name,
 		Disabled:             m.Disabled,
@@ -94,6 +96,23 @@ func GormGetAPIKey(key string) *APIKeyRow {
 	return &row
 }
 
+// GormGetAPIKeyByID retrieves a single API key entry by numeric ID using GORM.
+func GormGetAPIKeyByID(id int64) *APIKeyRow {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil
+	}
+	var m APIKey
+	if err := gormDB.Where("id = ?", id).First(&m).Error; err != nil {
+		if err != gorm.ErrRecordNotFound {
+			log.Errorf("usage: GORM get api_key by id %d: %v", id, err)
+		}
+		return nil
+	}
+	row := gormToAPIKeyRow(m)
+	return &row
+}
+
 // GormUpsertAPIKey inserts or updates an API key entry using GORM.
 func GormUpsertAPIKey(entry APIKeyRow) error {
 	gormDB := getGormDB()
@@ -141,6 +160,18 @@ func GormDeleteAPIKey(key string) error {
 	}
 	if err := gormDB.Where("key = ?", key).Delete(&APIKey{}).Error; err != nil {
 		return fmt.Errorf("usage: GORM delete api_key: %w", err)
+	}
+	return nil
+}
+
+// GormDeleteAPIKeyByID removes an API key entry by numeric ID using GORM.
+func GormDeleteAPIKeyByID(id int64) error {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return fmt.Errorf("database not initialised")
+	}
+	if err := gormDB.Where("id = ?", id).Delete(&APIKey{}).Error; err != nil {
+		return fmt.Errorf("usage: GORM delete api_key by id: %w", err)
 	}
 	return nil
 }

@@ -465,6 +465,25 @@ func (h *Handler) PatchAPIKeyEntry(c *gin.Context) {
 
 func (h *Handler) DeleteAPIKeyEntry(c *gin.Context) {
 	deleteLogs := shouldDeleteAPIKeyLogs(c)
+	// Support deletion by numeric ID (preferred) or by key string (legacy)
+	if idStr := strings.TrimSpace(c.Query("id")); idStr != "" {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+			return
+		}
+		if err := usage.DeleteAPIKeyByID(id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		var logsDeleted int64
+		if deleteLogs {
+			logsDeleted, _ = usage.DeleteLogsByAPIKeyID(id)
+		}
+		h.refreshAPIKeyCache()
+		c.JSON(200, gin.H{"status": "ok", "logs_deleted": logsDeleted})
+		return
+	}
 	if val := strings.TrimSpace(c.Query("key")); val != "" {
 		if err := usage.DeleteAPIKey(val); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -483,14 +502,14 @@ func (h *Handler) DeleteAPIKeyEntry(c *gin.Context) {
 		if _, err := fmt.Sscanf(idxStr, "%d", &idx); err == nil {
 			rows := usage.ListAPIKeys()
 			if idx >= 0 && idx < len(rows) {
-				keyVal := rows[idx].Key
-				if err := usage.DeleteAPIKey(keyVal); err != nil {
+				rowID := rows[idx].ID
+				if err := usage.DeleteAPIKeyByID(rowID); err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
 				}
 				var logsDeleted int64
 				if deleteLogs {
-					logsDeleted, _ = usage.DeleteLogsByAPIKey(keyVal)
+					logsDeleted, _ = usage.DeleteLogsByAPIKeyID(rowID)
 				}
 				h.refreshAPIKeyCache()
 				c.JSON(200, gin.H{"status": "ok", "logs_deleted": logsDeleted})
@@ -498,7 +517,7 @@ func (h *Handler) DeleteAPIKeyEntry(c *gin.Context) {
 			}
 		}
 	}
-	c.JSON(400, gin.H{"error": "missing key or index"})
+	c.JSON(400, gin.H{"error": "missing id, key or index"})
 }
 
 func shouldDeleteAPIKeyLogs(c *gin.Context) bool {

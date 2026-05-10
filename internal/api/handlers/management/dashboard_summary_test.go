@@ -22,7 +22,7 @@ func TestGetDashboardSummaryIncludesTrendsAndMeta(t *testing.T) {
 	}
 	t.Cleanup(usage.CloseDB)
 
-	usage.InsertLog("", "", "gpt-test", "codex", "codex", "auth-1", false, time.Now().UTC(), 100, 20, usage.TokenStats{
+	usage.InsertLog(0, "", "gpt-test", "codex", "codex", "auth-1", false, time.Now().UTC(), 100, 20, usage.TokenStats{
 		InputTokens:  11,
 		OutputTokens: 22,
 		TotalTokens:  33,
@@ -95,7 +95,7 @@ func TestGetDashboardSummaryIncludesTotalCost(t *testing.T) {
 	if err := usage.UpsertModelPricing("gpt-cost-test", 1, 2, 0); err != nil {
 		t.Fatalf("UpsertModelPricing: %v", err)
 	}
-	usage.InsertLog("", "", "gpt-cost-test", "codex", "codex", "auth-1", false, time.Now().UTC(), 100, 20, usage.TokenStats{
+	usage.InsertLog(0, "", "gpt-cost-test", "codex", "codex", "auth-1", false, time.Now().UTC(), 100, 20, usage.TokenStats{
 		InputTokens:  1000,
 		OutputTokens: 2000,
 		TotalTokens:  3000,

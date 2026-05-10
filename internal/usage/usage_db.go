@@ -19,7 +19,7 @@ import (
 type LogRow struct {
 	ID              int64     `json:"id"`
 	Timestamp       time.Time `json:"timestamp"`
-	APIKey          string    `json:"api_key"`
+	APIKeyID        int64     `json:"api_key_id"`
 	APIKeyName      string    `json:"api_key_name"`
 	Model           string    `json:"model"`
 	Source          string    `json:"source"`
@@ -42,7 +42,7 @@ type LogQueryParams struct {
 	Page         int      // 1-based
 	Size         int      // rows per page
 	Days         int      // time range in days
-	APIKey       string   // exact match filter
+	APIKeyID     int64    // filter by api_key_id; 0 = no filter, -1 = system requests (api_key_id = 0)
 	Model        string   // exact match filter
 	Status       string   // "success", "failed", or "" (all)
 	AuthIndexes  []string // optional auth_index IN (...) filter
@@ -57,12 +57,17 @@ type LogQueryResult struct {
 	Size  int      `json:"size"`
 }
 
+// APIKeyFilterItem holds an API key ID and name for filter dropdowns.
+type APIKeyFilterItem struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 // FilterOptions holds the available filter values for the UI.
 type FilterOptions struct {
-	APIKeys     []string          `json:"api_keys"`
-	APIKeyNames map[string]string `json:"api_key_names"`
-	Models      []string          `json:"models"`
-	Channels    []string          `json:"channels"`
+	APIKeys     []APIKeyFilterItem `json:"api_keys"`
+	Models      []string           `json:"models"`
+	Channels    []string           `json:"channels"`
 }
 
 // LogStats holds aggregated stats over the filtered result set.
@@ -126,7 +131,8 @@ const createTableSQL = `
 CREATE TABLE IF NOT EXISTS request_logs (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
   timestamp        DATETIME NOT NULL,
-  api_key          TEXT NOT NULL DEFAULT '',
+  api_key_id       INTEGER NOT NULL DEFAULT 0,
+  api_key_name     TEXT NOT NULL DEFAULT '',
   model            TEXT NOT NULL DEFAULT '',
   source           TEXT NOT NULL DEFAULT '',
   channel_name     TEXT NOT NULL DEFAULT '',
@@ -154,7 +160,7 @@ CREATE TABLE IF NOT EXISTS request_log_content (
 );
 
 CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON request_logs(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_logs_api_key ON request_logs(api_key);
+CREATE INDEX IF NOT EXISTS idx_logs_api_key_id ON request_logs(api_key_id);
 CREATE INDEX IF NOT EXISTS idx_logs_model ON request_logs(model);
 CREATE INDEX IF NOT EXISTS idx_logs_failed ON request_logs(failed);
 CREATE INDEX IF NOT EXISTS idx_logs_auth_index ON request_logs(auth_index);
@@ -363,24 +369,24 @@ func CloseDB() {
 
 // InsertLog writes a single request log entry into the SQLite database.
 // It is safe to call concurrently.
-func InsertLog(apiKey, apiKeyName, model, source, channelName, authIndex string,
+func InsertLog(apiKeyID int64, apiKeyName, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent string) {
-	insertLog(apiKey, apiKeyName, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, "")
+	insertLog(apiKeyID, apiKeyName, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, "")
 }
 
-func InsertLogWithDetails(apiKey, apiKeyName, model, source, channelName, authIndex string,
+func InsertLogWithDetails(apiKeyID int64, apiKeyName, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent, detailContent string) {
-	insertLog(apiKey, apiKeyName, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
+	insertLog(apiKeyID, apiKeyName, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
 }
 
-func insertLog(apiKey, apiKeyName, model, source, channelName, authIndex string,
+func insertLog(apiKeyID int64, apiKeyName, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent, detailContent string) {
 	// Use GORM if available, otherwise fall back to raw SQL
 	if getGormDB() != nil {
-		GormInsertLog(apiKey, apiKeyName, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
+		GormInsertLog(apiKeyID, apiKeyName, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
 		return
 	}
 
@@ -407,11 +413,11 @@ func insertLog(apiKey, apiKeyName, model, source, channelName, authIndex string,
 
 	result, err := tx.Exec(
 		`INSERT INTO request_logs
-			(timestamp, api_key, api_key_name, model, source, channel_name, auth_index,
+			(timestamp, api_key_id, api_key_name, model, source, channel_name, auth_index,
 			 failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		timestamp.UTC().Format(time.RFC3339Nano),
-		apiKey, apiKeyName, model, source, channelName, authIndex,
+		apiKeyID, apiKeyName, model, source, channelName, authIndex,
 		failedInt, latencyMs, firstTokenMs,
 		tokens.InputTokens, tokens.OutputTokens, tokens.ReasoningTokens,
 		tokens.CachedTokens, tokens.TotalTokens, cost,
@@ -442,9 +448,9 @@ func insertLog(apiKey, apiKeyName, model, source, channelName, authIndex string,
 		return
 	}
 
-	// Notify TPM tracker about token usage
+	// Notify TPM tracker about token usage (keep string callback for memory-level RPM/TPM tracking)
 	if tokenUsageCallback != nil && tokens.TotalTokens > 0 {
-		tokenUsageCallback(apiKey, tokens.TotalTokens)
+		tokenUsageCallback(apiKeyName, tokens.TotalTokens)
 	}
 }
 
@@ -499,7 +505,7 @@ func QueryLogs(params LogQueryParams) (LogQueryResult, error) {
 
 	// Fetch page
 	offset := (params.Page - 1) * params.Size
-	querySQL := "SELECT id, timestamp, api_key, api_key_name, model, source, channel_name, auth_index, " +
+	querySQL := "SELECT id, timestamp, api_key_id, api_key_name, model, source, channel_name, auth_index, " +
 		"failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, " +
 		"cost, " +
 		"(CASE WHEN EXISTS (SELECT 1 FROM request_log_content content WHERE content.log_id = request_logs.id) " +
@@ -520,7 +526,7 @@ func QueryLogs(params LogQueryParams) (LogQueryResult, error) {
 		var ts string
 		var failedInt, hasContentInt int
 		if err := rows.Scan(
-			&row.ID, &ts, &row.APIKey, &row.APIKeyName, &row.Model, &row.Source, &row.ChannelName,
+			&row.ID, &ts, &row.APIKeyID, &row.APIKeyName, &row.Model, &row.Source, &row.ChannelName,
 			&row.AuthIndex, &failedInt, &row.LatencyMs, &row.FirstTokenMs,
 			&row.InputTokens, &row.OutputTokens, &row.ReasoningTokens,
 			&row.CachedTokens, &row.TotalTokens, &row.Cost, &hasContentInt,
@@ -551,18 +557,17 @@ func QueryFilters(days int) (FilterOptions, error) {
 	}
 	db := getDB()
 	if db == nil {
-		// Ensure stable JSON shape: slices => [] (not null), maps => {} (not null).
+		// Ensure stable JSON shape: slices => [] (not null).
 		return FilterOptions{
-			APIKeys:     make([]string, 0),
-			APIKeyNames: make(map[string]string),
-			Models:      make([]string, 0),
-			Channels:    make([]string, 0),
+			APIKeys:  make([]APIKeyFilterItem, 0),
+			Models:   make([]string, 0),
+			Channels: make([]string, 0),
 		}, nil
 	}
 
 	cutoff := CutoffStartUTC(days).Format(time.RFC3339)
 
-	keys, err := queryDistinct(db, "api_key", cutoff)
+	keys, err := queryAPIKeyFilterItems(db)
 	if err != nil {
 		return FilterOptions{}, err
 	}
@@ -576,10 +581,9 @@ func QueryFilters(days int) (FilterOptions, error) {
 	}
 
 	return FilterOptions{
-		APIKeys:     keys,
-		APIKeyNames: make(map[string]string),
-		Models:      models,
-		Channels:    channels,
+		APIKeys:  keys,
+		Models:   models,
+		Channels: channels,
 	}, nil
 }
 
@@ -619,38 +623,48 @@ func QueryStats(params LogQueryParams) (LogStats, error) {
 	}, nil
 }
 
-// DeleteLogsByAPIKey removes all request_logs and request_log_content entries
-// for the given API key. Returns the number of deleted log rows.
-func DeleteLogsByAPIKey(apiKey string) (int64, error) {
+// DeleteLogsByAPIKeyID removes all request_logs and request_log_content entries
+// for the given API key ID. Returns the number of deleted log rows.
+func DeleteLogsByAPIKeyID(apiKeyID int64) (int64, error) {
 	if getGormDB() != nil {
-		return GormDeleteLogsByAPIKey(apiKey)
+		return GormDeleteLogsByAPIKeyID(apiKeyID)
 	}
 	db := getDB()
 	if db == nil {
 		return 0, fmt.Errorf("usage: database not initialised")
 	}
-	if apiKey == "" {
-		return 0, fmt.Errorf("usage: empty api_key")
+	if apiKeyID <= 0 {
+		return 0, fmt.Errorf("usage: invalid api_key_id")
 	}
 
 	// Delete associated content rows first (FK cascade may handle this,
 	// but be explicit to ensure cleanup even without FK enforcement).
 	_, _ = db.Exec(
 		`DELETE FROM request_log_content WHERE log_id IN
-		 (SELECT id FROM request_logs WHERE api_key = ?)`, apiKey)
+		 (SELECT id FROM request_logs WHERE api_key_id = ?)`, apiKeyID)
 
-	result, err := db.Exec("DELETE FROM request_logs WHERE api_key = ?", apiKey)
+	result, err := db.Exec("DELETE FROM request_logs WHERE api_key_id = ?", apiKeyID)
 	if err != nil {
-		return 0, fmt.Errorf("usage: delete logs by api_key: %w", err)
+		return 0, fmt.Errorf("usage: delete logs by api_key_id: %w", err)
 	}
 	deleted, err := result.RowsAffected()
 	if err != nil {
 		return 0, fmt.Errorf("usage: affected rows: %w", err)
 	}
 	if deleted > 0 {
-		log.Infof("usage: deleted %d request log(s) for api_key=%s", deleted, apiKey)
+		log.Infof("usage: deleted %d request log(s) for api_key_id=%d", deleted, apiKeyID)
 	}
 	return deleted, nil
+}
+
+// DeleteLogsByAPIKey is retained for backward compatibility.
+// It looks up the API key by string and delegates to DeleteLogsByAPIKeyID.
+func DeleteLogsByAPIKey(apiKey string) (int64, error) {
+	row := GetAPIKey(apiKey)
+	if row == nil {
+		return 0, fmt.Errorf("usage: api_key not found: %s", apiKey)
+	}
+	return DeleteLogsByAPIKeyID(row.ID)
 }
 
 // DashboardKPI holds the aggregated KPI data needed by the dashboard page.
@@ -1063,25 +1077,13 @@ func buildWhereClause(params LogQueryParams) (string, []interface{}) {
 	conditions = append(conditions, "timestamp >= ?")
 	args = append(args, CutoffStartUTC(params.Days).Format(time.RFC3339))
 
-	if params.APIKey != "" {
-		if params.APIKey == systemRequestLogFilterValue {
-			conditions = append(conditions, `(
-				trim(coalesce(api_key_name, '')) = ''
-				AND (
-					trim(coalesce(api_key, '')) = ''
-					OR trim(coalesce(api_key, '')) LIKE '/%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'GET /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'POST /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'PUT /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'PATCH /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'DELETE /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'OPTIONS /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'HEAD /%'
-				)
-			)`)
+	if params.APIKeyID != 0 {
+		if params.APIKeyID == -1 {
+			// System requests: api_key_id = 0 (replaces old string pattern matching on api_key column)
+			conditions = append(conditions, "api_key_id = 0")
 		} else {
-			conditions = append(conditions, "api_key = ?")
-			args = append(args, params.APIKey)
+			conditions = append(conditions, "api_key_id = ?")
+			args = append(args, params.APIKeyID)
 		}
 	}
 	if params.Model != "" {
@@ -1157,10 +1159,28 @@ func queryDistinct(db *sql.DB, column, cutoff string) ([]string, error) {
 	return result, nil
 }
 
-// QueryModelsForKey returns the distinct models used by a specific API key within the time range.
-func QueryModelsForKey(apiKey string, days int) ([]string, error) {
+func queryAPIKeyFilterItems(db *sql.DB) ([]APIKeyFilterItem, error) {
+	rows, err := db.Query("SELECT id, name FROM api_keys ORDER BY created_at ASC")
+	if err != nil {
+		return nil, fmt.Errorf("usage: query api_key filter items: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]APIKeyFilterItem, 0)
+	for rows.Next() {
+		var item APIKeyFilterItem
+		if err := rows.Scan(&item.ID, &item.Name); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+// QueryModelsForKey returns the distinct models used by a specific API key ID within the time range.
+func QueryModelsForKey(apiKeyID int64, days int) ([]string, error) {
 	if getGormDB() != nil {
-		return GormQueryModelsForKey(apiKey, days)
+		return GormQueryModelsForKey(apiKeyID, days)
 	}
 	db := getDB()
 	if db == nil {
@@ -1172,8 +1192,8 @@ func QueryModelsForKey(apiKey string, days int) ([]string, error) {
 	cutoff := CutoffStartUTC(days).Format(time.RFC3339)
 
 	rows, err := db.Query(
-		"SELECT DISTINCT model FROM request_logs WHERE api_key = ? AND timestamp >= ? AND model != '' ORDER BY model",
-		apiKey, cutoff,
+		"SELECT DISTINCT model FROM request_logs WHERE api_key_id = ? AND timestamp >= ? AND model != '' ORDER BY model",
+		apiKeyID, cutoff,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("usage: distinct models for key: %w", err)
@@ -1315,9 +1335,9 @@ func QueryLogContentPart(id int64, part string) (LogContentPartResult, error) {
 
 // QueryLogContentForKey retrieves log content for a single entry, but only if it belongs to the given API key.
 // This is used by the public endpoint to ensure users can only access their own logs.
-func QueryLogContentForKey(id int64, apiKey string) (LogContentResult, error) {
+func QueryLogContentForKey(id int64, apiKeyID int64) (LogContentResult, error) {
 	if getGormDB() != nil {
-		return GormQueryLogContentForKey(id, apiKey)
+		return GormQueryLogContentForKey(id, apiKeyID)
 	}
 	db := getDB()
 	if db == nil {
@@ -1329,8 +1349,8 @@ func QueryLogContentForKey(id int64, apiKey string) (LogContentResult, error) {
 		`SELECT logs.id, logs.model, content.compression, content.input_content, content.output_content
 		 FROM request_logs logs
 		 JOIN request_log_content content ON content.log_id = logs.id
-		 WHERE logs.id = ? AND logs.api_key = ?`,
-		id, apiKey,
+		 WHERE logs.id = ? AND logs.api_key_id = ?`,
+		id, apiKeyID,
 	)
 	if err == nil {
 		return result, nil
@@ -1338,7 +1358,7 @@ func QueryLogContentForKey(id int64, apiKey string) (LogContentResult, error) {
 
 	var fallback LogContentResult
 	err = db.QueryRow(
-		"SELECT id, model, input_content, output_content FROM request_logs WHERE id = ? AND api_key = ?", id, apiKey,
+		"SELECT id, model, input_content, output_content FROM request_logs WHERE id = ? AND api_key_id = ?", id, apiKeyID,
 	).Scan(&fallback.ID, &fallback.Model, &fallback.InputContent, &fallback.OutputContent)
 	if err != nil {
 		return LogContentResult{}, fmt.Errorf("usage: query log content: %w", err)
@@ -1348,9 +1368,9 @@ func QueryLogContentForKey(id int64, apiKey string) (LogContentResult, error) {
 
 // QueryLogContentPartForKey retrieves only one side (input/output) of the stored request/response content
 // for a single entry, but only if it belongs to the given API key.
-func QueryLogContentPartForKey(id int64, apiKey string, part string) (LogContentPartResult, error) {
+func QueryLogContentPartForKey(id int64, apiKeyID int64, part string) (LogContentPartResult, error) {
 	if getGormDB() != nil {
-		return GormQueryLogContentPartForKey(id, apiKey, part)
+		return GormQueryLogContentPartForKey(id, apiKeyID, part)
 	}
 	db := getDB()
 	if db == nil {
@@ -1376,10 +1396,10 @@ func QueryLogContentPartForKey(id int64, apiKey string, part string) (LogContent
 			`SELECT logs.id, logs.model, content.compression, content.%s
 			 FROM request_logs logs
 			 JOIN request_log_content content ON content.log_id = logs.id
-			 WHERE logs.id = ? AND logs.api_key = ?`,
+			 WHERE logs.id = ? AND logs.api_key_id = ?`,
 			column,
 		),
-		id, apiKey,
+		id, apiKeyID,
 	)
 	if err == nil {
 		return result, nil
@@ -1387,7 +1407,7 @@ func QueryLogContentPartForKey(id int64, apiKey string, part string) (LogContent
 	if part == "details" {
 		var fallback LogContentPartResult
 		fallback.Part = part
-		err = db.QueryRow("SELECT id, model FROM request_logs WHERE id = ? AND api_key = ?", id, apiKey).Scan(&fallback.ID, &fallback.Model)
+		err = db.QueryRow("SELECT id, model FROM request_logs WHERE id = ? AND api_key_id = ?", id, apiKeyID).Scan(&fallback.ID, &fallback.Model)
 		if err != nil {
 			return LogContentPartResult{}, fmt.Errorf("usage: query log content part: %w", err)
 		}
@@ -1397,8 +1417,8 @@ func QueryLogContentPartForKey(id int64, apiKey string, part string) (LogContent
 	var fallback LogContentPartResult
 	fallback.Part = part
 	err = db.QueryRow(
-		fmt.Sprintf("SELECT id, model, %s FROM request_logs WHERE id = ? AND api_key = ?", column),
-		id, apiKey,
+		fmt.Sprintf("SELECT id, model, %s FROM request_logs WHERE id = ? AND api_key_id = ?", column),
+		id, apiKeyID,
 	).Scan(&fallback.ID, &fallback.Model, &fallback.Content)
 	if err != nil {
 		return LogContentPartResult{}, fmt.Errorf("usage: query log content part: %w", err)
@@ -1423,9 +1443,9 @@ type ModelDistributionPoint struct {
 }
 
 // QueryDailySeries returns per-day aggregated request count and token usage for a given API key.
-func QueryDailySeries(apiKey string, days int) ([]DailySeriesPoint, error) {
+func QueryDailySeries(apiKeyID int64, days int) ([]DailySeriesPoint, error) {
 	if getGormDB() != nil {
-		return GormQueryDailySeries(apiKey, days)
+		return GormQueryDailySeries(apiKeyID, days)
 	}
 	db := getDB()
 	if db == nil {
@@ -1435,7 +1455,7 @@ func QueryDailySeries(apiKey string, days int) ([]DailySeriesPoint, error) {
 		days = 7
 	}
 
-	params := LogQueryParams{APIKey: apiKey, Days: days}
+	params := LogQueryParams{APIKeyID: apiKeyID, Days: days}
 	where, args := buildWhereClause(params)
 
 	// NOTE: timestamps are stored as UTC RFC3339 strings; localtime converts them to the process timezone
@@ -1466,9 +1486,9 @@ func QueryDailySeries(apiKey string, days int) ([]DailySeriesPoint, error) {
 }
 
 // QueryModelDistribution returns request count and token usage grouped by model for a given API key.
-func QueryModelDistribution(apiKey string, days int) ([]ModelDistributionPoint, error) {
+func QueryModelDistribution(apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
 	if getGormDB() != nil {
-		return GormQueryModelDistribution(apiKey, days)
+		return GormQueryModelDistribution(apiKeyID, days)
 	}
 	db := getDB()
 	if db == nil {
@@ -1478,7 +1498,7 @@ func QueryModelDistribution(apiKey string, days int) ([]ModelDistributionPoint, 
 		days = 7
 	}
 
-	params := LogQueryParams{APIKey: apiKey, Days: days}
+	params := LogQueryParams{APIKeyID: apiKeyID, Days: days}
 	where, args := buildWhereClause(params)
 
 	q := `SELECT model,
@@ -1506,7 +1526,7 @@ func QueryModelDistribution(apiKey string, days int) ([]ModelDistributionPoint, 
 
 // APIKeyDistributionPoint holds aggregated usage data for a single API key.
 type APIKeyDistributionPoint struct {
-	APIKey   string `json:"api_key"`
+	APIKeyID int64  `json:"api_key_id"`
 	Name     string `json:"name"`
 	Requests int64  `json:"requests"`
 	Tokens   int64  `json:"tokens"`
@@ -1528,13 +1548,13 @@ func QueryAPIKeyDistribution(days int) ([]APIKeyDistributionPoint, error) {
 	params := LogQueryParams{Days: days}
 	where, args := buildWhereClause(params)
 
-	q := `SELECT api_key,
-	             COALESCE(NULLIF(MAX(api_key_name),''), '') as name,
+	q := `SELECT api_key_id,
+	             COALESCE(NULLIF(MAX(api_key_name),''), k.name, '') as name,
 	             COUNT(*) as reqs,
 	             COALESCE(SUM(total_tokens),0)
-	      FROM request_logs` + where + `
-	      AND api_key != ''
-	      GROUP BY api_key ORDER BY reqs DESC`
+	      FROM request_logs LEFT JOIN api_keys k ON k.id = api_key_id` + where + `
+	      AND api_key_id != 0
+	      GROUP BY api_key_id ORDER BY reqs DESC`
 
 	rows, err := db.Query(q, args...)
 	if err != nil {
@@ -1545,7 +1565,7 @@ func QueryAPIKeyDistribution(days int) ([]APIKeyDistributionPoint, error) {
 	var result []APIKeyDistributionPoint
 	for rows.Next() {
 		var p APIKeyDistributionPoint
-		if err := rows.Scan(&p.APIKey, &p.Name, &p.Requests, &p.Tokens); err != nil {
+		if err := rows.Scan(&p.APIKeyID, &p.Name, &p.Requests, &p.Tokens); err != nil {
 			return nil, fmt.Errorf("usage: apikey distribution scan: %w", err)
 		}
 		result = append(result, p)
@@ -1578,9 +1598,9 @@ type HourlyModelPoint struct {
 }
 
 // QueryHourlySeries returns per-hour token and model aggregates for the last N hours.
-func QueryHourlySeries(apiKey string, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
+func QueryHourlySeries(apiKeyID int64, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
 	if getGormDB() != nil {
-		return GormQueryHourlySeries(apiKey, hours)
+		return GormQueryHourlySeries(apiKeyID, hours)
 	}
 	db := getDB()
 	if db == nil {
@@ -1593,14 +1613,11 @@ func QueryHourlySeries(apiKey string, hours int) ([]HourlyTokenPoint, []HourlyMo
 	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).UTC().Format(time.RFC3339)
 
 	// Build WHERE clause directly with the correct hourly cutoff.
-	// Previously this used buildWhereClause + strings.Replace, but that failed
-	// because buildWhereClause uses parameterised queries (? placeholders)
-	// so the time value lives in args, not in the where string.
 	conditions := []string{"timestamp >= ?"}
 	args := []interface{}{cutoff}
-	if apiKey != "" {
-		conditions = append(conditions, "api_key = ?")
-		args = append(args, apiKey)
+	if apiKeyID != 0 {
+		conditions = append(conditions, "api_key_id = ?")
+		args = append(args, apiKeyID)
 	}
 	where := " WHERE " + strings.Join(conditions, " AND ")
 
@@ -1656,9 +1673,9 @@ type EntityStatPoint struct {
 
 // QueryEntityStats returns aggregates grouped by a given column (e.g. "source" or "auth_index").
 // Time range is derived from days logic.
-func QueryEntityStats(apiKey string, days int, groupColumn string) ([]EntityStatPoint, error) {
+func QueryEntityStats(apiKeyID int64, days int, groupColumn string) ([]EntityStatPoint, error) {
 	if getGormDB() != nil {
-		return GormQueryEntityStats(apiKey, days, groupColumn)
+		return GormQueryEntityStats(apiKeyID, days, groupColumn)
 	}
 	db := getDB()
 	if db == nil {
@@ -1671,7 +1688,7 @@ func QueryEntityStats(apiKey string, days int, groupColumn string) ([]EntityStat
 		return nil, fmt.Errorf("usage: invalid group column")
 	}
 
-	params := LogQueryParams{APIKey: apiKey, Days: days}
+	params := LogQueryParams{APIKeyID: apiKeyID, Days: days}
 	where, args := buildWhereClause(params)
 
 	q := fmt.Sprintf(`
@@ -2264,9 +2281,9 @@ func GetChannelAvgLatency(days int) ([]ChannelLatency, error) {
 }
 
 // CountTodayByKey returns the number of requests made by the given API key today (project timezone).
-func CountTodayByKey(apiKey string) (int64, error) {
+func CountTodayByKey(apiKeyID int64) (int64, error) {
 	if getGormDB() != nil {
-		return GormCountTodayByKey(apiKey)
+		return GormCountTodayByKey(apiKeyID)
 	}
 	db := getDB()
 	if db == nil {
@@ -2274,8 +2291,8 @@ func CountTodayByKey(apiKey string) (int64, error) {
 	}
 	var count int64
 	err := db.QueryRow(
-		"SELECT COUNT(*) FROM request_logs WHERE api_key = ? AND timestamp >= ?",
-		apiKey, CutoffStartUTC(1).Format(time.RFC3339),
+		"SELECT COUNT(*) FROM request_logs WHERE api_key_id = ? AND timestamp >= ?",
+		apiKeyID, CutoffStartUTC(1).Format(time.RFC3339),
 	).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("usage: count today: %w", err)
@@ -2284,9 +2301,9 @@ func CountTodayByKey(apiKey string) (int64, error) {
 }
 
 // CountTotalByKey returns the total number of requests made by the given API key.
-func CountTotalByKey(apiKey string) (int64, error) {
+func CountTotalByKey(apiKeyID int64) (int64, error) {
 	if getGormDB() != nil {
-		return GormCountTotalByKey(apiKey)
+		return GormCountTotalByKey(apiKeyID)
 	}
 	db := getDB()
 	if db == nil {
@@ -2294,8 +2311,8 @@ func CountTotalByKey(apiKey string) (int64, error) {
 	}
 	var count int64
 	err := db.QueryRow(
-		"SELECT COUNT(*) FROM request_logs WHERE api_key = ?",
-		apiKey,
+		"SELECT COUNT(*) FROM request_logs WHERE api_key_id = ?",
+		apiKeyID,
 	).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("usage: count total: %w", err)

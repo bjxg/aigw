@@ -91,7 +91,7 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 		Page:         intQueryDefault(c, "page", 1),
 		Size:         intQueryDefault(c, "size", 50),
 		Days:         intQueryDefault(c, "days", 7),
-		APIKey:       strings.TrimSpace(c.Query("api_key")),
+		APIKeyID:     int64QueryDefault(c, "api_key_id", 0),
 		Model:        strings.TrimSpace(c.Query("model")),
 		Status:       strings.TrimSpace(c.Query("status")),
 		AuthIndexes:  authIndexes,
@@ -119,11 +119,6 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 	// Enrich log items with resolved names
 	for i := range result.Items {
 		item := &result.Items[i]
-		if item.APIKeyName == "" {
-			if name, ok := keyNameMap[item.APIKey]; ok {
-				item.APIKeyName = name
-			}
-		}
 		// Keep the channel captured at request time. Only translate legacy
 		// source identifiers (email/API key) into display names.
 		if item.ChannelName != "" {
@@ -141,11 +136,14 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 		}
 	}
 
-	// Enrich filter options with key names
-	filters.APIKeyNames = make(map[string]string, len(filters.APIKeys))
-	for _, key := range filters.APIKeys {
-		if name, ok := keyNameMap[key]; ok {
-			filters.APIKeyNames[key] = name
+	// Enrich filter API key items with names from config
+	if len(filters.APIKeys) > 0 {
+		for i := range filters.APIKeys {
+			if filters.APIKeys[i].Name == "" {
+				if name, ok := keyNameMap[strconv.FormatInt(filters.APIKeys[i].ID, 10)]; ok {
+					filters.APIKeys[i].Name = name
+				}
+			}
 		}
 	}
 	if len(filters.Channels) > 0 {
@@ -175,16 +173,13 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 		result.Items = make([]usage.LogRow, 0)
 	}
 	if filters.APIKeys == nil {
-		filters.APIKeys = make([]string, 0)
+		filters.APIKeys = make([]usage.APIKeyFilterItem, 0)
 	}
 	if filters.Models == nil {
 		filters.Models = make([]string, 0)
 	}
 	if filters.Channels == nil {
 		filters.Channels = make([]string, 0)
-	}
-	if filters.APIKeyNames == nil {
-		filters.APIKeyNames = make(map[string]string)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -281,6 +276,18 @@ func intQueryDefault(c *gin.Context, key string, def int) int {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 1 {
+		return def
+	}
+	return n
+}
+
+func int64QueryDefault(c *gin.Context, key string, def int64) int64 {
+	v := strings.TrimSpace(c.Query(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
 		return def
 	}
 	return n
@@ -391,13 +398,19 @@ func (h *Handler) GetPublicUsageLogs(c *gin.Context) {
 		return
 	}
 
+	// Resolve API key string to ID for query
+	var apiKeyID int64
+	if row := usage.GetAPIKey(apiKey); row != nil {
+		apiKeyID = row.ID
+	}
+
 	params := usage.LogQueryParams{
-		Page:   req.Page,
-		Size:   req.Size,
-		Days:   req.Days,
-		APIKey: apiKey,
-		Model:  req.Model,
-		Status: req.Status,
+		Page:     req.Page,
+		Size:     req.Size,
+		Days:     req.Days,
+		APIKeyID: apiKeyID,
+		Model:    req.Model,
+		Status:   req.Status,
 	}
 
 	result, err := usage.QueryLogs(params)
@@ -417,12 +430,11 @@ func (h *Handler) GetPublicUsageLogs(c *gin.Context) {
 		result.Items[i].Source = ""
 		result.Items[i].AuthIndex = ""
 		result.Items[i].ChannelName = ""
-		result.Items[i].APIKey = ""
 		result.Items[i].APIKeyName = ""
 	}
 
-	// Model filter options (scoped to this api_key via QueryFilters with key filter)
-	models, _ := usage.QueryModelsForKey(apiKey, params.Days)
+	// Model filter options (scoped to this api_key_id via QueryModelsForKey)
+	models, _ := usage.QueryModelsForKey(apiKeyID, params.Days)
 	if models == nil {
 		models = make([]string, 0)
 	}
@@ -455,9 +467,15 @@ func (h *Handler) GetPublicUsageChartData(c *gin.Context) {
 		return
 	}
 
+	// Resolve API key string to ID for query
+	var apiKeyID int64
+	if row := usage.GetAPIKey(apiKey); row != nil {
+		apiKeyID = row.ID
+	}
+
 	days := req.Days
 
-	daily, err := usage.QueryDailySeries(apiKey, days)
+	daily, err := usage.QueryDailySeries(apiKeyID, days)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -466,7 +484,7 @@ func (h *Handler) GetPublicUsageChartData(c *gin.Context) {
 		daily = []usage.DailySeriesPoint{}
 	}
 
-	models, err := usage.QueryModelDistribution(apiKey, days)
+	models, err := usage.QueryModelDistribution(apiKeyID, days)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -476,7 +494,7 @@ func (h *Handler) GetPublicUsageChartData(c *gin.Context) {
 	}
 
 	// Also fetch stats for KPI cards
-	stats, err := usage.QueryStats(usage.LogQueryParams{APIKey: apiKey, Days: days})
+	stats, err := usage.QueryStats(usage.LogQueryParams{APIKeyID: apiKeyID, Days: days})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -504,6 +522,12 @@ func (h *Handler) GetPublicLogContent(c *gin.Context) {
 		return
 	}
 
+	// Resolve API key string to ID for query
+	var apiKeyID int64
+	if row := usage.GetAPIKey(apiKey); row != nil {
+		apiKeyID = row.ID
+	}
+
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
 	if err != nil || id < 1 {
@@ -524,7 +548,7 @@ func (h *Handler) GetPublicLogContent(c *gin.Context) {
 	}
 
 	if part == "both" {
-		result, err := usage.QueryLogContentForKey(id, apiKey)
+		result, err := usage.QueryLogContentForKey(id, apiKeyID)
 		if err != nil {
 			if strings.Contains(err.Error(), "no rows") {
 				c.JSON(http.StatusNotFound, gin.H{"error": "log entry not found"})
@@ -537,7 +561,7 @@ func (h *Handler) GetPublicLogContent(c *gin.Context) {
 		return
 	}
 
-	result, err := usage.QueryLogContentPartForKey(id, apiKey, part)
+	result, err := usage.QueryLogContentPartForKey(id, apiKeyID, part)
 	if err != nil {
 		if strings.Contains(err.Error(), "no rows") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "log entry not found"})
@@ -564,10 +588,10 @@ func (h *Handler) GetPublicLogContent(c *gin.Context) {
 // GetUsageChartData returns pre-aggregated chart data for the management portal.
 // It applies an optional apiKey filter.
 func (h *Handler) GetUsageChartData(c *gin.Context) {
-	apiKey := strings.TrimSpace(c.Query("api_key"))
+	apiKeyID := int64QueryDefault(c, "api_key_id", 0)
 	days := intQueryDefault(c, "days", 7)
 
-	daily, err := usage.QueryDailySeries(apiKey, days)
+	daily, err := usage.QueryDailySeries(apiKeyID, days)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -576,7 +600,7 @@ func (h *Handler) GetUsageChartData(c *gin.Context) {
 		daily = []usage.DailySeriesPoint{}
 	}
 
-	models, err := usage.QueryModelDistribution(apiKey, days)
+	models, err := usage.QueryModelDistribution(apiKeyID, days)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -585,7 +609,7 @@ func (h *Handler) GetUsageChartData(c *gin.Context) {
 		models = []usage.ModelDistributionPoint{}
 	}
 
-	hourlyTokens, hourlyModels, err := usage.QueryHourlySeries(apiKey, 24)
+	hourlyTokens, hourlyModels, err := usage.QueryHourlySeries(apiKeyID, 24)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -599,7 +623,7 @@ func (h *Handler) GetUsageChartData(c *gin.Context) {
 
 	// API Key distribution (only when not filtered by a single key)
 	var apikeyDist []usage.APIKeyDistributionPoint
-	if apiKey == "" {
+	if apiKeyID == 0 {
 		apikeyDist, err = usage.QueryAPIKeyDistribution(days)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -610,7 +634,7 @@ func (h *Handler) GetUsageChartData(c *gin.Context) {
 		keyNameMap, _, _ := h.buildNameMaps()
 		for i := range apikeyDist {
 			if apikeyDist[i].Name == "" {
-				if name, ok := keyNameMap[apikeyDist[i].APIKey]; ok {
+				if name, ok := keyNameMap[strconv.FormatInt(apikeyDist[i].APIKeyID, 10)]; ok {
 					apikeyDist[i].Name = name
 				}
 			}
@@ -631,10 +655,10 @@ func (h *Handler) GetUsageChartData(c *gin.Context) {
 
 // GetEntityUsageStats returns aggregated statistics grouped by source or auth_index
 func (h *Handler) GetEntityUsageStats(c *gin.Context) {
-	apiKey := strings.TrimSpace(c.Query("api_key"))
+	apiKeyID := int64QueryDefault(c, "api_key_id", 0)
 	days := intQueryDefault(c, "days", 7)
 
-	sourceStats, err := usage.QueryEntityStats(apiKey, days, "source")
+	sourceStats, err := usage.QueryEntityStats(apiKeyID, days, "source")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -643,7 +667,7 @@ func (h *Handler) GetEntityUsageStats(c *gin.Context) {
 		sourceStats = []usage.EntityStatPoint{}
 	}
 
-	authIndexStats, err := usage.QueryEntityStats(apiKey, days, "auth_index")
+	authIndexStats, err := usage.QueryEntityStats(apiKeyID, days, "auth_index")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

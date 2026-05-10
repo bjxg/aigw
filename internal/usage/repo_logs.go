@@ -130,7 +130,7 @@ func (r *gormLogRepo) Query(ctx context.Context, params LogQueryParams) (LogQuer
 	offset := (params.Page - 1) * params.Size
 	var items []LogRow
 
-	selectFields := `id, timestamp, api_key, api_key_name, model, source, channel_name, auth_index,
+	selectFields := `id, timestamp, api_key_id, api_key_name, model, source, channel_name, auth_index,
 		failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost,
 		(CASE WHEN EXISTS (SELECT 1 FROM request_log_content content WHERE content.log_id = request_logs.id)
 			OR length(input_content) > 0 OR length(output_content) > 0 THEN 1 ELSE 0 END) as has_content`
@@ -149,7 +149,7 @@ func (r *gormLogRepo) Query(ctx context.Context, params LogQueryParams) (LogQuer
 		var row LogRow
 		var failedInt, hasContentInt int
 		if err := rows.Scan(
-			&row.ID, &row.Timestamp, &row.APIKey, &row.APIKeyName, &row.Model, &row.Source, &row.ChannelName,
+			&row.ID, &row.Timestamp, &row.APIKeyID, &row.APIKeyName, &row.Model, &row.Source, &row.ChannelName,
 			&row.AuthIndex, &failedInt, &row.LatencyMs, &row.FirstTokenMs,
 			&row.InputTokens, &row.OutputTokens, &row.ReasoningTokens,
 			&row.CachedTokens, &row.TotalTokens, &row.Cost, &hasContentInt,
@@ -175,22 +175,22 @@ func (r *gormLogRepo) Query(ctx context.Context, params LogQueryParams) (LogQuer
 
 // --- DeleteByAPIKey ---
 
-func (r *gormLogRepo) DeleteByAPIKey(ctx context.Context, apiKey string) (int64, error) {
-	if apiKey == "" {
-		return 0, fmt.Errorf("usage: empty api_key")
+func (r *gormLogRepo) DeleteByAPIKeyID(ctx context.Context, apiKeyID int64) (int64, error) {
+	if apiKeyID <= 0 {
+		return 0, fmt.Errorf("usage: invalid api_key_id")
 	}
 
 	// Delete associated content rows first
 	r.db.WithContext(ctx).
-		Where("log_id IN (?)", r.db.Model(&RequestLog{}).Select("id").Where("api_key = ?", apiKey)).
+		Where("log_id IN (?)", r.db.Model(&RequestLog{}).Select("id").Where("api_key_id = ?", apiKeyID)).
 		Delete(&RequestLogContent{})
 
-	result := r.db.WithContext(ctx).Where("api_key = ?", apiKey).Delete(&RequestLog{})
+	result := r.db.WithContext(ctx).Where("api_key_id = ?", apiKeyID).Delete(&RequestLog{})
 	if result.Error != nil {
-		return 0, fmt.Errorf("usage: delete logs by api_key: %w", result.Error)
+		return 0, fmt.Errorf("usage: delete logs by api_key_id: %w", result.Error)
 	}
 	if result.RowsAffected > 0 {
-		log.Infof("usage: deleted %d request log(s) for api_key=%s", result.RowsAffected, apiKey)
+		log.Infof("usage: deleted %d request log(s) for api_key_id=%d", result.RowsAffected, apiKeyID)
 	}
 	return result.RowsAffected, nil
 }
@@ -304,7 +304,7 @@ func (r *gormLogRepo) QueryContentPart(ctx context.Context, id int64, part strin
 
 // --- QueryContentForKey ---
 
-func (r *gormLogRepo) QueryContentForKey(ctx context.Context, id int64, apiKey string) (LogContentResult, error) {
+func (r *gormLogRepo) QueryContentForKey(ctx context.Context, id int64, apiKeyID int64) (LogContentResult, error) {
 	var result LogContentResult
 	var compression string
 	var inputCompressed, outputCompressed []byte
@@ -312,8 +312,8 @@ func (r *gormLogRepo) QueryContentForKey(ctx context.Context, id int64, apiKey s
 		SELECT logs.id, logs.model, content.compression, content.input_content, content.output_content
 		FROM request_logs logs
 		JOIN request_log_content content ON content.log_id = logs.id
-		WHERE logs.id = ? AND logs.api_key = ?
-	`, id, apiKey).Row()
+		WHERE logs.id = ? AND logs.api_key_id = ?
+	`, id, apiKeyID).Row()
 	err := row.Scan(&result.ID, &result.Model, &compression, &inputCompressed, &outputCompressed)
 	if err == nil && result.ID > 0 {
 		inputDecoded, err := decompressLogContent(compression, inputCompressed)
@@ -336,7 +336,7 @@ func (r *gormLogRepo) QueryContentForKey(ctx context.Context, id int64, apiKey s
 			`SELECT logs.id, logs.model, content.compression, content.input_content, content.output_content
 			 FROM request_logs logs
 			 JOIN request_log_content content ON content.log_id = logs.id
-			 WHERE logs.id = ? AND logs.api_key = ?`, id, apiKey,
+			 WHERE logs.id = ? AND logs.api_key_id = ?`, id, apiKeyID,
 		)
 	}
 
@@ -345,7 +345,7 @@ func (r *gormLogRepo) QueryContentForKey(ctx context.Context, id int64, apiKey s
 
 // --- QueryContentPartForKey ---
 
-func (r *gormLogRepo) QueryContentPartForKey(ctx context.Context, id int64, apiKey, part string) (LogContentPartResult, error) {
+func (r *gormLogRepo) QueryContentPartForKey(ctx context.Context, id int64, apiKeyID int64, part string) (LogContentPartResult, error) {
 	part, err := normalizeLogContentPart(part)
 	if err != nil {
 		return LogContentPartResult{}, err
@@ -366,8 +366,8 @@ func (r *gormLogRepo) QueryContentPartForKey(ctx context.Context, id int64, apiK
 		SELECT logs.id, logs.model, content.compression, content.%s
 		FROM request_logs logs
 		JOIN request_log_content content ON content.log_id = logs.id
-		WHERE logs.id = ? AND logs.api_key = ?
-	`, column), id, apiKey).Row()
+		WHERE logs.id = ? AND logs.api_key_id = ?
+	`, column), id, apiKeyID).Row()
 	err = row.Scan(&logID, &model, &compression, &content)
 	if err == nil && logID > 0 {
 		decoded, err := decompressLogContent(compression, content)
@@ -390,13 +390,13 @@ func (r *gormLogRepo) QueryContentPartForKey(ctx context.Context, id int64, apiK
 			fmt.Sprintf(`SELECT logs.id, logs.model, content.compression, content.%s
 			 FROM request_logs logs
 			 JOIN request_log_content content ON content.log_id = logs.id
-			 WHERE logs.id = ? AND logs.api_key = ?`, column), id, apiKey,
+			 WHERE logs.id = ? AND logs.api_key_id = ?`, column), id, apiKeyID,
 		)
 	}
 
 	if part == "details" {
 		var reqLog RequestLog
-		if err := r.db.WithContext(ctx).Select("id, model").Where("id = ? AND api_key = ?", id, apiKey).First(&reqLog).Error; err != nil {
+		if err := r.db.WithContext(ctx).Select("id, model").Where("id = ? AND api_key_id = ?", id, apiKeyID).First(&reqLog).Error; err != nil {
 			return LogContentPartResult{}, fmt.Errorf("usage: query log content part: %w", err)
 		}
 		return LogContentPartResult{ID: reqLog.ID, Model: reqLog.Model, Part: part}, nil
@@ -450,7 +450,7 @@ func (r *gormLogRepo) QueryFilters(ctx context.Context, days int) (FilterOptions
 
 	cutoff := CutoffStartUTC(days)
 
-	keys, err := r.queryDistinctGorm(ctx, "api_key", cutoff)
+	keys, err := r.queryAPIKeyFilterItemsGorm(ctx)
 	if err != nil {
 		return FilterOptions{}, err
 	}
@@ -464,10 +464,9 @@ func (r *gormLogRepo) QueryFilters(ctx context.Context, days int) (FilterOptions
 	}
 
 	return FilterOptions{
-		APIKeys:     keys,
-		APIKeyNames: make(map[string]string),
-		Models:      models,
-		Channels:    channels,
+		APIKeys:  keys,
+		Models:   models,
+		Channels: channels,
 	}, nil
 }
 
@@ -480,6 +479,21 @@ func (r *gormLogRepo) queryDistinctGorm(ctx context.Context, column string, cuto
 		Pluck(column, &results).Error
 	if err != nil {
 		return nil, fmt.Errorf("usage: distinct %s: %w", column, err)
+	}
+	return results, nil
+}
+
+func (r *gormLogRepo) queryAPIKeyFilterItemsGorm(ctx context.Context) ([]APIKeyFilterItem, error) {
+	var results []APIKeyFilterItem
+	err := r.db.WithContext(ctx).Model(&APIKey{}).
+		Select("id, name").
+		Order("created_at ASC").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("usage: query api_key filter items: %w", err)
+	}
+	if results == nil {
+		results = make([]APIKeyFilterItem, 0)
 	}
 	return results, nil
 }
@@ -609,13 +623,13 @@ func (r *gormLogRepo) queryDashboardThroughputSeries(ctx context.Context, now ti
 
 // --- QueryDailySeries ---
 
-func (r *gormLogRepo) QueryDailySeries(ctx context.Context, apiKey string, days int) ([]DailySeriesPoint, error) {
+func (r *gormLogRepo) QueryDailySeries(ctx context.Context, apiKeyID int64, days int) ([]DailySeriesPoint, error) {
 	if days < 1 {
 		days = 7
 	}
 
 	query := r.db.WithContext(ctx).Model(&RequestLog{})
-	query = applyTimeAndAPIKeyFilter(query, apiKey, days)
+	query = applyTimeAndAPIKeyFilter(query, apiKeyID, days)
 
 	// Use dialect-specific date truncation expression
 	dateExpr := dateTruncSQL("timestamp", "day")
@@ -633,13 +647,13 @@ func (r *gormLogRepo) QueryDailySeries(ctx context.Context, apiKey string, days 
 
 // --- QueryModelDistribution ---
 
-func (r *gormLogRepo) QueryModelDistribution(ctx context.Context, apiKey string, days int) ([]ModelDistributionPoint, error) {
+func (r *gormLogRepo) QueryModelDistribution(ctx context.Context, apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
 	if days < 1 {
 		days = 7
 	}
 
 	query := r.db.WithContext(ctx).Model(&RequestLog{})
-	query = applyTimeAndAPIKeyFilter(query, apiKey, days)
+	query = applyTimeAndAPIKeyFilter(query, apiKeyID, days)
 
 	var results []ModelDistributionPoint
 	err := query.Select("model, COUNT(*) as requests, COALESCE(SUM(total_tokens),0) as tokens").
@@ -663,9 +677,10 @@ func (r *gormLogRepo) QueryAPIKeyDistribution(ctx context.Context, days int) ([]
 	cutoff := CutoffStartUTC(days)
 	var results []APIKeyDistributionPoint
 	err := r.db.WithContext(ctx).Model(&RequestLog{}).
-		Select("api_key, COALESCE(NULLIF(MAX(api_key_name),''), '') as name, COUNT(*) as requests, COALESCE(SUM(total_tokens),0) as tokens").
-		Where("timestamp >= ? AND api_key != ''", cutoff).
-		Group("api_key").
+		Select("api_key_id, COALESCE(NULLIF(MAX(api_key_name),''), k.name, '') as name, COUNT(*) as requests, COALESCE(SUM(total_tokens),0) as tokens").
+		Joins("LEFT JOIN api_keys k ON k.id = api_key_id").
+		Where("timestamp >= ? AND api_key_id != 0", cutoff).
+		Group("api_key_id").
 		Order("requests DESC").
 		Find(&results).Error
 	if err != nil {
@@ -676,7 +691,7 @@ func (r *gormLogRepo) QueryAPIKeyDistribution(ctx context.Context, days int) ([]
 
 // --- QueryHourlySeries ---
 
-func (r *gormLogRepo) QueryHourlySeries(ctx context.Context, apiKey string, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
+func (r *gormLogRepo) QueryHourlySeries(ctx context.Context, apiKeyID int64, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
 	if hours < 1 {
 		hours = 24
 	}
@@ -684,8 +699,8 @@ func (r *gormLogRepo) QueryHourlySeries(ctx context.Context, apiKey string, hour
 	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).UTC()
 
 	query := r.db.WithContext(ctx).Model(&RequestLog{}).Where("timestamp >= ?", cutoff)
-	if apiKey != "" {
-		query = query.Where("api_key = ?", apiKey)
+	if apiKeyID != 0 {
+		query = query.Where("api_key_id = ?", apiKeyID)
 	}
 
 	// Token aggregation by hour
@@ -715,7 +730,7 @@ func (r *gormLogRepo) QueryHourlySeries(ctx context.Context, apiKey string, hour
 
 // --- QueryEntityStats ---
 
-func (r *gormLogRepo) QueryEntityStats(ctx context.Context, apiKey string, days int, groupColumn string) ([]EntityStatPoint, error) {
+func (r *gormLogRepo) QueryEntityStats(ctx context.Context, apiKeyID int64, days int, groupColumn string) ([]EntityStatPoint, error) {
 	if days < 1 {
 		days = 7
 	}
@@ -724,7 +739,7 @@ func (r *gormLogRepo) QueryEntityStats(ctx context.Context, apiKey string, days 
 	}
 
 	query := r.db.WithContext(ctx).Model(&RequestLog{})
-	query = applyTimeAndAPIKeyFilter(query, apiKey, days)
+	query = applyTimeAndAPIKeyFilter(query, apiKeyID, days)
 
 	var results []EntityStatPoint
 	err := query.Select(fmt.Sprintf("%s as entity_name, COUNT(*) as requests, COALESCE(SUM(CASE WHEN failed = true THEN 1 ELSE 0 END),0) as failed, COALESCE(AVG(latency_ms),0) as avg_latency, COALESCE(SUM(total_tokens),0) as total_tokens", groupColumn)).
@@ -788,10 +803,10 @@ func (r *gormLogRepo) GetChannelAvgLatency(ctx context.Context, days int) ([]Cha
 
 // --- CountTodayByKey ---
 
-func (r *gormLogRepo) CountTodayByKey(ctx context.Context, apiKey string) (int64, error) {
+func (r *gormLogRepo) CountTodayByKey(ctx context.Context, apiKeyID int64) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&RequestLog{}).
-		Where("api_key = ? AND timestamp >= ?", apiKey, CutoffStartUTC(1)).
+		Where("api_key_id = ? AND timestamp >= ?", apiKeyID, CutoffStartUTC(1)).
 		Count(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("usage: count today: %w", err)
@@ -801,10 +816,10 @@ func (r *gormLogRepo) CountTodayByKey(ctx context.Context, apiKey string) (int64
 
 // --- CountTotalByKey ---
 
-func (r *gormLogRepo) CountTotalByKey(ctx context.Context, apiKey string) (int64, error) {
+func (r *gormLogRepo) CountTotalByKey(ctx context.Context, apiKeyID int64) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&RequestLog{}).
-		Where("api_key = ?", apiKey).
+		Where("api_key_id = ?", apiKeyID).
 		Count(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("usage: count total: %w", err)
@@ -814,11 +829,11 @@ func (r *gormLogRepo) CountTotalByKey(ctx context.Context, apiKey string) (int64
 
 // --- QueryTotalCostByKey ---
 
-func (r *gormLogRepo) QueryTotalCostByKey(ctx context.Context, apiKey string) (float64, error) {
+func (r *gormLogRepo) QueryTotalCostByKey(ctx context.Context, apiKeyID int64) (float64, error) {
 	var total float64
 	err := r.db.WithContext(ctx).Model(&RequestLog{}).
 		Select("COALESCE(SUM(cost), 0)").
-		Where("api_key = ?", apiKey).
+		Where("api_key_id = ?", apiKeyID).
 		Scan(&total).Error
 	if err != nil {
 		return 0, fmt.Errorf("usage: query total cost: %w", err)
@@ -828,7 +843,7 @@ func (r *gormLogRepo) QueryTotalCostByKey(ctx context.Context, apiKey string) (f
 
 // --- QueryModelsForKey ---
 
-func (r *gormLogRepo) QueryModelsForKey(ctx context.Context, apiKey string, days int) ([]string, error) {
+func (r *gormLogRepo) QueryModelsForKey(ctx context.Context, apiKeyID int64, days int) ([]string, error) {
 	if days < 1 {
 		days = 7
 	}
@@ -837,7 +852,7 @@ func (r *gormLogRepo) QueryModelsForKey(ctx context.Context, apiKey string, days
 	var results []string
 	err := r.db.WithContext(ctx).Model(&RequestLog{}).
 		Distinct("model").
-		Where("api_key = ? AND timestamp >= ? AND model != ''", apiKey, cutoff).
+		Where("api_key_id = ? AND timestamp >= ? AND model != ''", apiKeyID, cutoff).
 		Pluck("model", &results).Error
 	if err != nil {
 		return nil, fmt.Errorf("usage: distinct models for key: %w", err)
@@ -852,24 +867,12 @@ func applyLogFilters(query *gorm.DB, params LogQueryParams) *gorm.DB {
 	cutoff := CutoffStartUTC(params.Days)
 	query = query.Where("timestamp >= ?", cutoff)
 
-	if params.APIKey != "" {
-		if params.APIKey == systemRequestLogFilterValue {
-			query = query.Where(`(
-				trim(coalesce(api_key_name, '')) = ''
-				AND (
-					trim(coalesce(api_key, '')) = ''
-					OR trim(coalesce(api_key, '')) LIKE '/%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'GET /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'POST /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'PUT /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'PATCH /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'DELETE /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'OPTIONS /%'
-					OR upper(trim(coalesce(api_key, ''))) LIKE 'HEAD /%'
-				)
-			)`)
+	if params.APIKeyID != 0 {
+		if params.APIKeyID == -1 {
+			// System requests: api_key_id = 0
+			query = query.Where("api_key_id = 0")
 		} else {
-			query = query.Where("api_key = ?", params.APIKey)
+			query = query.Where("api_key_id = ?", params.APIKeyID)
 		}
 	}
 
@@ -896,12 +899,12 @@ func applyLogFilters(query *gorm.DB, params LogQueryParams) *gorm.DB {
 	return query
 }
 
-// applyTimeAndAPIKeyFilter applies a simple time range + optional API key filter.
-func applyTimeAndAPIKeyFilter(query *gorm.DB, apiKey string, days int) *gorm.DB {
+// applyTimeAndAPIKeyFilter applies a simple time range + optional API key ID filter.
+func applyTimeAndAPIKeyFilter(query *gorm.DB, apiKeyID int64, days int) *gorm.DB {
 	cutoff := CutoffStartUTC(days)
 	query = query.Where("timestamp >= ?", cutoff)
-	if apiKey != "" {
-		query = query.Where("api_key = ?", apiKey)
+	if apiKeyID != 0 {
+		query = query.Where("api_key_id = ?", apiKeyID)
 	}
 	return query
 }
@@ -926,7 +929,7 @@ func buildGormFilterConditionOr(query *gorm.DB, params LogQueryParams) []string 
 
 // GormInsertLog is the GORM-backed implementation of the package-level InsertLog.
 // It writes a single request log entry and its content.
-func GormInsertLog(apiKey, apiKeyName, model, source, channelName, authIndex string,
+func GormInsertLog(apiKeyID int64, apiKeyName, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent, detailContent string) {
 
@@ -937,7 +940,7 @@ func GormInsertLog(apiKey, apiKeyName, model, source, channelName, authIndex str
 
 	reqLog := &RequestLog{
 		Timestamp:       timestamp.UTC(),
-		APIKey:          apiKey,
+		APIKeyID:        apiKeyID,
 		APIKeyName:      apiKeyName,
 		Model:           model,
 		Source:          source,
@@ -959,9 +962,9 @@ func GormInsertLog(apiKey, apiKeyName, model, source, channelName, authIndex str
 		return
 	}
 
-	// Notify TPM tracker about token usage
+	// Notify TPM tracker about token usage (keep string callback for memory-level RPM/TPM tracking)
 	if tokenUsageCallback != nil && tokens.TotalTokens > 0 {
-		tokenUsageCallback(apiKey, tokens.TotalTokens)
+		tokenUsageCallback(apiKeyName, tokens.TotalTokens)
 	}
 }
 
@@ -985,10 +988,9 @@ func GormQueryFilters(days int) (FilterOptions, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return FilterOptions{
-			APIKeys:     make([]string, 0),
-			APIKeyNames: make(map[string]string),
-			Models:      make([]string, 0),
-			Channels:    make([]string, 0),
+			APIKeys:  make([]APIKeyFilterItem, 0),
+			Models:   make([]string, 0),
+			Channels: make([]string, 0),
 		}, nil
 	}
 	repo := &gormLogRepo{db: gormDB}
@@ -1005,14 +1007,14 @@ func GormQueryStats(params LogQueryParams) (LogStats, error) {
 	return repo.QueryStats(context.Background(), params)
 }
 
-// GormDeleteLogsByAPIKey is the GORM-backed implementation of DeleteLogsByAPIKey.
-func GormDeleteLogsByAPIKey(apiKey string) (int64, error) {
+// GormDeleteLogsByAPIKeyID is the GORM-backed implementation of DeleteLogsByAPIKeyID.
+func GormDeleteLogsByAPIKeyID(apiKeyID int64) (int64, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return 0, fmt.Errorf("usage: database not initialised")
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.DeleteByAPIKey(context.Background(), apiKey)
+	return repo.DeleteByAPIKeyID(context.Background(), apiKeyID)
 }
 
 // GormQueryLogContent is the GORM-backed implementation of QueryLogContent.
@@ -1036,23 +1038,23 @@ func GormQueryLogContentPart(id int64, part string) (LogContentPartResult, error
 }
 
 // GormQueryLogContentForKey is the GORM-backed implementation of QueryLogContentForKey.
-func GormQueryLogContentForKey(id int64, apiKey string) (LogContentResult, error) {
+func GormQueryLogContentForKey(id int64, apiKeyID int64) (LogContentResult, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return LogContentResult{}, fmt.Errorf("usage: database not initialised")
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryContentForKey(context.Background(), id, apiKey)
+	return repo.QueryContentForKey(context.Background(), id, apiKeyID)
 }
 
 // GormQueryLogContentPartForKey is the GORM-backed implementation of QueryLogContentPartForKey.
-func GormQueryLogContentPartForKey(id int64, apiKey, part string) (LogContentPartResult, error) {
+func GormQueryLogContentPartForKey(id int64, apiKeyID int64, part string) (LogContentPartResult, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return LogContentPartResult{}, fmt.Errorf("usage: database not initialised")
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryContentPartForKey(context.Background(), id, apiKey, part)
+	return repo.QueryContentPartForKey(context.Background(), id, apiKeyID, part)
 }
 
 // GormQueryDashboardKPI is the GORM-backed implementation of QueryDashboardKPI.
@@ -1076,23 +1078,23 @@ func GormQueryDashboardTrends(days int) (DashboardTrends, error) {
 }
 
 // GormQueryDailySeries is the GORM-backed implementation of QueryDailySeries.
-func GormQueryDailySeries(apiKey string, days int) ([]DailySeriesPoint, error) {
+func GormQueryDailySeries(apiKeyID int64, days int) ([]DailySeriesPoint, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return nil, nil
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryDailySeries(context.Background(), apiKey, days)
+	return repo.QueryDailySeries(context.Background(), apiKeyID, days)
 }
 
 // GormQueryModelDistribution is the GORM-backed implementation of QueryModelDistribution.
-func GormQueryModelDistribution(apiKey string, days int) ([]ModelDistributionPoint, error) {
+func GormQueryModelDistribution(apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return nil, nil
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryModelDistribution(context.Background(), apiKey, days)
+	return repo.QueryModelDistribution(context.Background(), apiKeyID, days)
 }
 
 // GormQueryAPIKeyDistribution is the GORM-backed implementation of QueryAPIKeyDistribution.
@@ -1106,23 +1108,23 @@ func GormQueryAPIKeyDistribution(days int) ([]APIKeyDistributionPoint, error) {
 }
 
 // GormQueryHourlySeries is the GORM-backed implementation of QueryHourlySeries.
-func GormQueryHourlySeries(apiKey string, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
+func GormQueryHourlySeries(apiKeyID int64, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return nil, nil, nil
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryHourlySeries(context.Background(), apiKey, hours)
+	return repo.QueryHourlySeries(context.Background(), apiKeyID, hours)
 }
 
 // GormQueryEntityStats is the GORM-backed implementation of QueryEntityStats.
-func GormQueryEntityStats(apiKey string, days int, groupColumn string) ([]EntityStatPoint, error) {
+func GormQueryEntityStats(apiKeyID int64, days int, groupColumn string) ([]EntityStatPoint, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return nil, nil
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryEntityStats(context.Background(), apiKey, days, groupColumn)
+	return repo.QueryEntityStats(context.Background(), apiKeyID, days, groupColumn)
 }
 
 // GormGetRequestLogStorageBytes is the GORM-backed implementation of GetRequestLogStorageBytes.
@@ -1146,43 +1148,43 @@ func GormGetChannelAvgLatency(days int) ([]ChannelLatency, error) {
 }
 
 // GormCountTodayByKey is the GORM-backed implementation of CountTodayByKey.
-func GormCountTodayByKey(apiKey string) (int64, error) {
+func GormCountTodayByKey(apiKeyID int64) (int64, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return 0, nil
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.CountTodayByKey(context.Background(), apiKey)
+	return repo.CountTodayByKey(context.Background(), apiKeyID)
 }
 
 // GormCountTotalByKey is the GORM-backed implementation of CountTotalByKey.
-func GormCountTotalByKey(apiKey string) (int64, error) {
+func GormCountTotalByKey(apiKeyID int64) (int64, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return 0, nil
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.CountTotalByKey(context.Background(), apiKey)
+	return repo.CountTotalByKey(context.Background(), apiKeyID)
 }
 
 // GormQueryModelsForKey is the GORM-backed implementation of QueryModelsForKey.
-func GormQueryModelsForKey(apiKey string, days int) ([]string, error) {
+func GormQueryModelsForKey(apiKeyID int64, days int) ([]string, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return make([]string, 0), nil
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryModelsForKey(context.Background(), apiKey, days)
+	return repo.QueryModelsForKey(context.Background(), apiKeyID, days)
 }
 
 // GormQueryTotalCostByKey is the GORM-backed implementation of QueryTotalCostByKey.
-func GormQueryTotalCostByKey(apiKey string) (float64, error) {
+func GormQueryTotalCostByKey(apiKeyID int64) (float64, error) {
 	gormDB := getGormDB()
 	if gormDB == nil {
 		return 0, nil
 	}
 	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryTotalCostByKey(context.Background(), apiKey)
+	return repo.QueryTotalCostByKey(context.Background(), apiKeyID)
 }
 
 // GormQueryDailyCallsByAuthIndexes is the GORM-backed implementation of QueryDailyCallsByAuthIndexes.

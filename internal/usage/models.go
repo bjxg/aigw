@@ -13,7 +13,7 @@ import (
 type RequestLog struct {
 	ID              int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	Timestamp       time.Time `gorm:"index:idx_logs_timestamp;not null" json:"timestamp"`
-	APIKey          string    `gorm:"index:idx_logs_api_key;not null;default:''" json:"api_key"`
+	APIKeyID        int64     `gorm:"index:idx_logs_api_key_id;not null;default:0" json:"api_key_id"`
 	APIKeyName      string    `gorm:"not null;default:''" json:"api_key_name"`
 	Model           string    `gorm:"index:idx_logs_model;not null;default:''" json:"model"`
 	Source          string    `gorm:"not null;default:''" json:"source"`
@@ -54,21 +54,22 @@ func (RequestLogContent) TableName() string { return "request_log_content" }
 
 // APIKey maps to the api_keys table.
 type APIKey struct {
-	Key                  string `gorm:"primaryKey;not null" json:"key"`
-	Name                 string `gorm:"not null;default:''" json:"name"`
-	Disabled             bool   `gorm:"not null;default:false" json:"disabled"`
-	DailyLimit           int    `gorm:"not null;default:0" json:"daily_limit"`
-	TotalQuota           int    `gorm:"not null;default:0" json:"total_quota"`
+	ID                   int64   `gorm:"primaryKey;autoIncrement" json:"id"`
+	Key                  string  `gorm:"uniqueIndex;not null" json:"key"`
+	Name                 string  `gorm:"not null;default:''" json:"name"`
+	Disabled             bool    `gorm:"not null;default:false" json:"disabled"`
+	DailyLimit           int     `gorm:"not null;default:0" json:"daily_limit"`
+	TotalQuota           int     `gorm:"not null;default:0" json:"total_quota"`
 	SpendingLimit        float64 `gorm:"not null;default:0" json:"spending_limit"`
-	ConcurrencyLimit     int    `gorm:"not null;default:0" json:"concurrency_limit"`
-	RPMLimit             int    `gorm:"not null;default:0" json:"rpm_limit"`
-	TPMLimit             int    `gorm:"not null;default:0" json:"tpm_limit"`
-	AllowedModels        string `gorm:"not null;default:'[]'" json:"allowed_models"`         // JSON-encoded []string
-	AllowedChannels      string `gorm:"not null;default:'[]'" json:"allowed_channels"`       // JSON-encoded []string
-	AllowedChannelGroups string `gorm:"not null;default:'[]'" json:"allowed_channel_groups"` // JSON-encoded []string
-	SystemPrompt         string `gorm:"not null;default:''" json:"system_prompt"`
-	CreatedAt            string `gorm:"not null;default:''" json:"created_at"`
-	UpdatedAt            string `gorm:"not null;default:''" json:"updated_at"`
+	ConcurrencyLimit     int     `gorm:"not null;default:0" json:"concurrency_limit"`
+	RPMLimit             int     `gorm:"not null;default:0" json:"rpm_limit"`
+	TPMLimit             int     `gorm:"not null;default:0" json:"tpm_limit"`
+	AllowedModels        string  `gorm:"not null;default:'[]'" json:"allowed_models"`         // JSON-encoded []string
+	AllowedChannels      string  `gorm:"not null;default:'[]'" json:"allowed_channels"`       // JSON-encoded []string
+	AllowedChannelGroups string  `gorm:"not null;default:'[]'" json:"allowed_channel_groups"` // JSON-encoded []string
+	SystemPrompt         string  `gorm:"not null;default:''" json:"system_prompt"`
+	CreatedAt            string  `gorm:"not null;default:''" json:"created_at"`
+	UpdatedAt            string  `gorm:"not null;default:''" json:"updated_at"`
 }
 
 // TableName overrides the table name.

@@ -14,8 +14,8 @@ type LogRepository interface {
 	// Query returns a paginated, filtered list of log entries.
 	Query(ctx context.Context, params LogQueryParams) (LogQueryResult, error)
 
-	// DeleteByAPIKey removes all logs for the given API key.
-	DeleteByAPIKey(ctx context.Context, apiKey string) (int64, error)
+	// DeleteByAPIKeyID removes all logs for the given API key ID.
+	DeleteByAPIKeyID(ctx context.Context, apiKeyID int64) (int64, error)
 
 	// QueryContent retrieves the stored request/response content for a single log entry.
 	QueryContent(ctx context.Context, id int64) (LogContentResult, error)
@@ -23,11 +23,11 @@ type LogRepository interface {
 	// QueryContentPart retrieves only one side (input/output/details) of the content.
 	QueryContentPart(ctx context.Context, id int64, part string) (LogContentPartResult, error)
 
-	// QueryContentForKey retrieves content only if the log belongs to the given API key.
-	QueryContentForKey(ctx context.Context, id int64, apiKey string) (LogContentResult, error)
+	// QueryContentForKey retrieves content only if the log belongs to the given API key ID.
+	QueryContentForKey(ctx context.Context, id int64, apiKeyID int64) (LogContentResult, error)
 
-	// QueryContentPartForKey retrieves one side of content, key-scoped.
-	QueryContentPartForKey(ctx context.Context, id int64, apiKey, part string) (LogContentPartResult, error)
+	// QueryContentPartForKey retrieves one side of content, key-scoped by ID.
+	QueryContentPartForKey(ctx context.Context, id int64, apiKeyID int64, part string) (LogContentPartResult, error)
 
 	// QueryStats returns aggregated statistics over the filtered dataset.
 	QueryStats(ctx context.Context, params LogQueryParams) (LogStats, error)
@@ -42,19 +42,19 @@ type LogRepository interface {
 	QueryDashboardTrends(ctx context.Context, days int) (DashboardTrends, error)
 
 	// QueryDailySeries returns per-day aggregated data for an API key.
-	QueryDailySeries(ctx context.Context, apiKey string, days int) ([]DailySeriesPoint, error)
+	QueryDailySeries(ctx context.Context, apiKeyID int64, days int) ([]DailySeriesPoint, error)
 
 	// QueryModelDistribution returns usage grouped by model for an API key.
-	QueryModelDistribution(ctx context.Context, apiKey string, days int) ([]ModelDistributionPoint, error)
+	QueryModelDistribution(ctx context.Context, apiKeyID int64, days int) ([]ModelDistributionPoint, error)
 
 	// QueryAPIKeyDistribution returns usage grouped by API key.
 	QueryAPIKeyDistribution(ctx context.Context, days int) ([]APIKeyDistributionPoint, error)
 
 	// QueryHourlySeries returns per-hour token and model aggregates.
-	QueryHourlySeries(ctx context.Context, apiKey string, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error)
+	QueryHourlySeries(ctx context.Context, apiKeyID int64, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error)
 
 	// QueryEntityStats returns aggregates grouped by a given column.
-	QueryEntityStats(ctx context.Context, apiKey string, days int, groupColumn string) ([]EntityStatPoint, error)
+	QueryEntityStats(ctx context.Context, apiKeyID int64, days int, groupColumn string) ([]EntityStatPoint, error)
 
 	// QueryLogStorageBytes returns approximate bytes occupied by stored content.
 	QueryLogStorageBytes(ctx context.Context) (int64, error)
@@ -62,25 +62,27 @@ type LogRepository interface {
 	// GetChannelAvgLatency returns average latency grouped by source.
 	GetChannelAvgLatency(ctx context.Context, days int) ([]ChannelLatency, error)
 
-	// CountTodayByKey returns the number of requests by a given API key today.
-	CountTodayByKey(ctx context.Context, apiKey string) (int64, error)
+	// CountTodayByKey returns the number of requests by a given API key ID today.
+	CountTodayByKey(ctx context.Context, apiKeyID int64) (int64, error)
 
-	// CountTotalByKey returns the total number of requests by a given API key.
-	CountTotalByKey(ctx context.Context, apiKey string) (int64, error)
+	// CountTotalByKey returns the total number of requests by a given API key ID.
+	CountTotalByKey(ctx context.Context, apiKeyID int64) (int64, error)
 
-	// QueryTotalCostByKey returns the total accumulated cost for a given API key.
-	QueryTotalCostByKey(ctx context.Context, apiKey string) (float64, error)
+	// QueryTotalCostByKey returns the total accumulated cost for a given API key ID.
+	QueryTotalCostByKey(ctx context.Context, apiKeyID int64) (float64, error)
 
-	// QueryModelsForKey returns distinct models used by an API key.
-	QueryModelsForKey(ctx context.Context, apiKey string, days int) ([]string, error)
+	// QueryModelsForKey returns distinct models used by an API key ID.
+	QueryModelsForKey(ctx context.Context, apiKeyID int64, days int) ([]string, error)
 }
 
 // APIKeyRepository defines the interface for API key persistence operations.
 type APIKeyRepository interface {
 	List(ctx context.Context) ([]APIKeyRow, error)
 	Get(ctx context.Context, key string) (*APIKeyRow, error)
+	GetByID(ctx context.Context, id int64) (*APIKeyRow, error)
 	Upsert(ctx context.Context, entry APIKeyRow) error
 	Delete(ctx context.Context, key string) error
+	DeleteByID(ctx context.Context, id int64) error
 	ReplaceAll(ctx context.Context, entries []APIKeyRow) error
 }
 

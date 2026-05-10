@@ -145,6 +145,14 @@ func QuotaMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		// Get the API key numeric ID (set by auth middleware)
+		var apiKeyID int64
+		if apiKeyIDVal, exists := c.Get("apiKeyID"); exists {
+			if id, ok := apiKeyIDVal.(int64); ok {
+				apiKeyID = id
+			}
+		}
+
 		// ── Always record this request for system-wide RPM tracking ──
 		// This must happen before any metadata checks so ALL authenticated
 		// POST requests are counted for the dashboard RPM display.
@@ -210,7 +218,7 @@ func QuotaMiddleware() gin.HandlerFunc {
 
 		// --- Daily limit check (from usage DB) ---
 		if dailyLimit > 0 {
-			todayCount, err := countTodayByKeyFunc(apiKey)
+			todayCount, err := countTodayByKeyFunc(apiKeyID)
 			if err != nil {
 				log.Warnf("quota: failed to query daily usage for key %s: %v", maskKey(apiKey), err)
 			} else if todayCount >= int64(dailyLimit) {
@@ -227,7 +235,7 @@ func QuotaMiddleware() gin.HandlerFunc {
 
 		// --- Total quota check (from usage DB) ---
 		if totalQuota > 0 {
-			totalCount, err := countTotalByKeyFunc(apiKey)
+			totalCount, err := countTotalByKeyFunc(apiKeyID)
 			if err != nil {
 				log.Warnf("quota: failed to query total usage for key %s: %v", maskKey(apiKey), err)
 			} else if totalCount >= int64(totalQuota) {
@@ -244,7 +252,7 @@ func QuotaMiddleware() gin.HandlerFunc {
 
 		// --- Spending limit check (from usage DB) ---
 		if spendingLimit > 0 {
-			totalCost, err := queryTotalCostByKeyFunc(apiKey)
+			totalCost, err := queryTotalCostByKeyFunc(apiKeyID)
 			if err != nil {
 				log.Warnf("quota: failed to query total cost for key %s: %v", maskKey(apiKey), err)
 			} else if totalCost >= spendingLimit {
@@ -268,17 +276,17 @@ func QuotaMiddleware() gin.HandlerFunc {
 // countTodayByKeyFunc and countTotalByKeyFunc are set by InitQuotaUsageFuncs.
 // They default to no-ops that always return 0 (no limit enforced) until set.
 var (
-	countTodayByKeyFunc     = func(string) (int64, error) { return 0, nil }
-	countTotalByKeyFunc     = func(string) (int64, error) { return 0, nil }
-	queryTotalCostByKeyFunc = func(string) (float64, error) { return 0, nil }
+	countTodayByKeyFunc     = func(int64) (int64, error) { return 0, nil }
+	countTotalByKeyFunc     = func(int64) (int64, error) { return 0, nil }
+	queryTotalCostByKeyFunc = func(int64) (float64, error) { return 0, nil }
 )
 
 // InitQuotaUsageFuncs injects the usage DB query functions into the middleware.
 // This avoids a direct import of the usage package which would cause cycles.
 func InitQuotaUsageFuncs(
-	countToday func(string) (int64, error),
-	countTotal func(string) (int64, error),
-	totalCost func(string) (float64, error),
+	countToday func(int64) (int64, error),
+	countTotal func(int64) (int64, error),
+	totalCost func(int64) (float64, error),
 ) {
 	countTodayByKeyFunc = countToday
 	countTotalByKeyFunc = countTotal

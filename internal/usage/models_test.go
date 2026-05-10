@@ -84,7 +84,7 @@ func TestRequestLog_CRUD(t *testing.T) {
 
 	// Create
 	logEntry := &RequestLog{
-		APIKey:      "test-key",
+		APIKeyID:    1,
 		APIKeyName:  "Test Key",
 		Model:       "gpt-4",
 		Source:      "openai",
@@ -104,8 +104,8 @@ func TestRequestLog_CRUD(t *testing.T) {
 	if err := d.First(&got, logEntry.ID).Error; err != nil {
 		t.Fatalf("First() error = %v", err)
 	}
-	if got.APIKey != "test-key" {
-		t.Errorf("got.APIKey = %q, want %q", got.APIKey, "test-key")
+	if got.APIKeyID != 1 {
+		t.Errorf("got.APIKeyID = %d, want %d", got.APIKeyID, 1)
 	}
 	if got.Model != "gpt-4" {
 		t.Errorf("got.Model = %q, want %q", got.Model, "gpt-4")

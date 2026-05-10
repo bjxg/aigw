@@ -81,6 +81,10 @@ type StreamingConfig struct {
 
 // APIKeyEntry represents an API key with optional metadata for advanced management.
 type APIKeyEntry struct {
+	// ID is the auto-incremented database primary key. It is assigned on creation and
+	// should not be set when creating a new key from YAML config.
+	ID int64 `yaml:"-" json:"id"`
+
 	// Key is the API key string used for authentication.
 	Key string `yaml:"key" json:"key"`
 

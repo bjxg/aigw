@@ -205,10 +205,10 @@ func CalculateCost(modelID string, inputTokens, outputTokens, cachedTokens int64
 	)
 }
 
-// QueryTotalCostByKey returns the total accumulated cost for a given API key.
-func QueryTotalCostByKey(apiKey string) (float64, error) {
+// QueryTotalCostByKey returns the total accumulated cost for a given API key ID.
+func QueryTotalCostByKey(apiKeyID int64) (float64, error) {
 	if getGormDB() != nil {
-		return GormQueryTotalCostByKey(apiKey)
+		return GormQueryTotalCostByKey(apiKeyID)
 	}
 	db := getDB()
 	if db == nil {
@@ -216,8 +216,8 @@ func QueryTotalCostByKey(apiKey string) (float64, error) {
 	}
 	var total float64
 	err := db.QueryRow(
-		"SELECT COALESCE(SUM(cost), 0) FROM request_logs WHERE api_key = ?",
-		apiKey,
+		"SELECT COALESCE(SUM(cost), 0) FROM request_logs WHERE api_key_id = ?",
+		apiKeyID,
 	).Scan(&total)
 	if err != nil {
 		return 0, fmt.Errorf("usage: query total cost: %w", err)

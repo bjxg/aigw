@@ -13,6 +13,7 @@ import (
 
 // APIKeyRow mirrors config.APIKeyEntry and is used for SQLite persistence.
 type APIKeyRow struct {
+	ID                   int64    `json:"id"`
 	Key                  string   `json:"key"`
 	Name                 string   `json:"name,omitempty"`
 	Disabled             bool     `json:"disabled,omitempty"`
@@ -33,6 +34,7 @@ type APIKeyRow struct {
 // ToConfigEntry converts an APIKeyRow to a config.APIKeyEntry.
 func (r *APIKeyRow) ToConfigEntry() config.APIKeyEntry {
 	return config.APIKeyEntry{
+		ID:                   r.ID,
 		Key:                  r.Key,
 		Name:                 r.Name,
 		Disabled:             r.Disabled,
@@ -53,6 +55,7 @@ func (r *APIKeyRow) ToConfigEntry() config.APIKeyEntry {
 // APIKeyRowFromConfig converts a config.APIKeyEntry to an APIKeyRow.
 func APIKeyRowFromConfig(entry config.APIKeyEntry) APIKeyRow {
 	return APIKeyRow{
+		ID:                   entry.ID,
 		Key:                  entry.Key,
 		Name:                 entry.Name,
 		Disabled:             entry.Disabled,
@@ -72,7 +75,8 @@ func APIKeyRowFromConfig(entry config.APIKeyEntry) APIKeyRow {
 
 const createAPIKeysTableSQL = `
 CREATE TABLE IF NOT EXISTS api_keys (
-  key               TEXT PRIMARY KEY NOT NULL,
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  key               TEXT NOT NULL UNIQUE,
   name              TEXT NOT NULL DEFAULT '',
   disabled          INTEGER NOT NULL DEFAULT 0,
   daily_limit       INTEGER NOT NULL DEFAULT 0,
@@ -334,7 +338,7 @@ func ListAPIKeys() []APIKeyRow {
 		return nil
 	}
 
-	rows, err := db.Query(`SELECT key, name, disabled, daily_limit, total_quota,
+	rows, err := db.Query(`SELECT id, key, name, disabled, daily_limit, total_quota,
 		spending_limit, concurrency_limit, rpm_limit, tpm_limit,
 		allowed_models, allowed_channels, allowed_channel_groups, system_prompt, created_at, updated_at
 		FROM api_keys ORDER BY created_at ASC`)
@@ -357,10 +361,28 @@ func GetAPIKey(key string) *APIKeyRow {
 		return nil
 	}
 
-	row := db.QueryRow(`SELECT key, name, disabled, daily_limit, total_quota,
+	row := db.QueryRow(`SELECT id, key, name, disabled, daily_limit, total_quota,
 		spending_limit, concurrency_limit, rpm_limit, tpm_limit,
 		allowed_models, allowed_channels, allowed_channel_groups, system_prompt, created_at, updated_at
 		FROM api_keys WHERE key = ?`, key)
+
+	return scanSingleAPIKeyRow(row)
+}
+
+// GetAPIKeyByID retrieves a single API key entry by numeric ID.
+func GetAPIKeyByID(id int64) *APIKeyRow {
+	if getGormDB() != nil {
+		return GormGetAPIKeyByID(id)
+	}
+	db := getDB()
+	if db == nil {
+		return nil
+	}
+
+	row := db.QueryRow(`SELECT id, key, name, disabled, daily_limit, total_quota,
+		spending_limit, concurrency_limit, rpm_limit, tpm_limit,
+		allowed_models, allowed_channels, allowed_channel_groups, system_prompt, created_at, updated_at
+		FROM api_keys WHERE id = ?`, id)
 
 	return scanSingleAPIKeyRow(row)
 }
@@ -435,6 +457,19 @@ func DeleteAPIKey(key string) error {
 		return fmt.Errorf("database not initialised")
 	}
 	_, err := db.Exec("DELETE FROM api_keys WHERE key = ?", key)
+	return err
+}
+
+// DeleteAPIKeyByID removes an API key entry by numeric ID.
+func DeleteAPIKeyByID(id int64) error {
+	if getGormDB() != nil {
+		return GormDeleteAPIKeyByID(id)
+	}
+	db := getDB()
+	if db == nil {
+		return fmt.Errorf("database not initialised")
+	}
+	_, err := db.Exec("DELETE FROM api_keys WHERE id = ?", id)
 	return err
 }
 
@@ -534,7 +569,7 @@ func scanAPIKeyFromRow(row scannable) *APIKeyRow {
 	var channelsJSON string
 	var channelGroupsJSON string
 	if err := row.Scan(
-		&r.Key, &r.Name, &disabledInt,
+		&r.ID, &r.Key, &r.Name, &disabledInt,
 		&r.DailyLimit, &r.TotalQuota, &r.SpendingLimit,
 		&r.ConcurrencyLimit, &r.RPMLimit, &r.TPMLimit,
 		&modelsJSON, &channelsJSON, &channelGroupsJSON, &r.SystemPrompt,
@@ -562,7 +597,7 @@ func scanSingleAPIKeyRow(row *sql.Row) *APIKeyRow {
 	var channelsJSON string
 	var channelGroupsJSON string
 	if err := row.Scan(
-		&r.Key, &r.Name, &disabledInt,
+		&r.ID, &r.Key, &r.Name, &disabledInt,
 		&r.DailyLimit, &r.TotalQuota, &r.SpendingLimit,
 		&r.ConcurrencyLimit, &r.RPMLimit, &r.TPMLimit,
 		&modelsJSON, &channelsJSON, &channelGroupsJSON, &r.SystemPrompt,
