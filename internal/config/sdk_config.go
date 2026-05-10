@@ -91,6 +91,9 @@ type APIKeyEntry struct {
 	// Name is a human-readable label for this key.
 	Name string `yaml:"name,omitempty" json:"name,omitempty"`
 
+	// UserID is the ID of the user this key belongs to. nil means unassigned.
+	UserID *int64 `yaml:"-" json:"user-id,omitempty"`
+
 	// Disabled marks this key as inactive. Disabled keys cannot authenticate.
 	Disabled bool `yaml:"disabled,omitempty" json:"disabled,omitempty"`
 

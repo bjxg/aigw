@@ -21,6 +21,7 @@ func apiKeyRowToGORM(row APIKeyRow) APIKey {
 		ID:                   row.ID,
 		Key:                  row.Key,
 		Name:                 row.Name,
+		UserID:               row.UserID,
 		Disabled:             row.Disabled,
 		DailyLimit:           row.DailyLimit,
 		TotalQuota:           row.TotalQuota,
@@ -43,6 +44,7 @@ func gormToAPIKeyRow(m APIKey) APIKeyRow {
 		ID:                   m.ID,
 		Key:                  m.Key,
 		Name:                 m.Name,
+		UserID:               m.UserID,
 		Disabled:             m.Disabled,
 		DailyLimit:           m.DailyLimit,
 		TotalQuota:           m.TotalQuota,
@@ -139,7 +141,7 @@ func GormUpsertAPIKey(entry APIKeyRow) error {
 	result := gormDB.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "key"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"name", "disabled", "daily_limit", "total_quota", "spending_limit",
+			"name", "user_id", "disabled", "daily_limit", "total_quota", "spending_limit",
 			"concurrency_limit", "rpm_limit", "tpm_limit",
 			"allowed_models", "allowed_channels", "allowed_channel_groups",
 			"system_prompt", "updated_at",

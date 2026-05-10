@@ -130,7 +130,7 @@ func (r *gormLogRepo) Query(ctx context.Context, params LogQueryParams) (LogQuer
 	offset := (params.Page - 1) * params.Size
 	var items []LogRow
 
-	selectFields := `id, timestamp, api_key_id, api_key_name, model, source, channel_name, auth_index,
+	selectFields := `id, timestamp, api_key_id, api_key_name, user_id, model, source, channel_name, auth_index,
 		failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost,
 		(CASE WHEN EXISTS (SELECT 1 FROM request_log_content content WHERE content.log_id = request_logs.id)
 			OR length(input_content) > 0 OR length(output_content) > 0 THEN 1 ELSE 0 END) as has_content`
@@ -149,7 +149,7 @@ func (r *gormLogRepo) Query(ctx context.Context, params LogQueryParams) (LogQuer
 		var row LogRow
 		var failedInt, hasContentInt int
 		if err := rows.Scan(
-			&row.ID, &row.Timestamp, &row.APIKeyID, &row.APIKeyName, &row.Model, &row.Source, &row.ChannelName,
+			&row.ID, &row.Timestamp, &row.APIKeyID, &row.APIKeyName, &row.UserID, &row.Model, &row.Source, &row.ChannelName,
 			&row.AuthIndex, &failedInt, &row.LatencyMs, &row.FirstTokenMs,
 			&row.InputTokens, &row.OutputTokens, &row.ReasoningTokens,
 			&row.CachedTokens, &row.TotalTokens, &row.Cost, &hasContentInt,
@@ -454,6 +454,10 @@ func (r *gormLogRepo) QueryFilters(ctx context.Context, days int) (FilterOptions
 	if err != nil {
 		return FilterOptions{}, err
 	}
+	users, err := r.queryUserFilterItemsGorm(ctx, cutoff)
+	if err != nil {
+		return FilterOptions{}, err
+	}
 	models, err := r.queryDistinctGorm(ctx, "model", cutoff)
 	if err != nil {
 		return FilterOptions{}, err
@@ -465,6 +469,7 @@ func (r *gormLogRepo) QueryFilters(ctx context.Context, days int) (FilterOptions
 
 	return FilterOptions{
 		APIKeys:  keys,
+		Users:    users,
 		Models:   models,
 		Channels: channels,
 	}, nil
@@ -494,6 +499,24 @@ func (r *gormLogRepo) queryAPIKeyFilterItemsGorm(ctx context.Context) ([]APIKeyF
 	}
 	if results == nil {
 		results = make([]APIKeyFilterItem, 0)
+	}
+	return results, nil
+}
+
+func (r *gormLogRepo) queryUserFilterItemsGorm(ctx context.Context, cutoff time.Time) ([]UserFilterItem, error) {
+	var results []UserFilterItem
+	err := r.db.WithContext(ctx).
+		Table("request_logs").
+		Select("DISTINCT users.id, users.name").
+		Joins("JOIN users ON users.id = request_logs.user_id").
+		Where("request_logs.timestamp >= ? AND request_logs.user_id IS NOT NULL", cutoff).
+		Order("users.name").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("usage: query user filter items: %w", err)
+	}
+	if results == nil {
+		results = make([]UserFilterItem, 0)
 	}
 	return results, nil
 }
@@ -876,6 +899,10 @@ func applyLogFilters(query *gorm.DB, params LogQueryParams) *gorm.DB {
 		}
 	}
 
+	if params.UserID != 0 {
+		query = query.Where("user_id = ?", params.UserID)
+	}
+
 	if params.Model != "" {
 		query = query.Where("model = ?", params.Model)
 	}
@@ -929,7 +956,7 @@ func buildGormFilterConditionOr(query *gorm.DB, params LogQueryParams) []string 
 
 // GormInsertLog is the GORM-backed implementation of the package-level InsertLog.
 // It writes a single request log entry and its content.
-func GormInsertLog(apiKeyID int64, apiKeyName, model, source, channelName, authIndex string,
+func GormInsertLog(apiKeyID int64, apiKeyName string, userID *int64, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent, detailContent string) {
 
@@ -942,6 +969,7 @@ func GormInsertLog(apiKeyID int64, apiKeyName, model, source, channelName, authI
 		Timestamp:       timestamp.UTC(),
 		APIKeyID:        apiKeyID,
 		APIKeyName:      apiKeyName,
+		UserID:          userID,
 		Model:           model,
 		Source:          source,
 		ChannelName:     channelName,
@@ -989,6 +1017,7 @@ func GormQueryFilters(days int) (FilterOptions, error) {
 	if gormDB == nil {
 		return FilterOptions{
 			APIKeys:  make([]APIKeyFilterItem, 0),
+			Users:    make([]UserFilterItem, 0),
 			Models:   make([]string, 0),
 			Channels: make([]string, 0),
 		}, nil

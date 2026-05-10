@@ -324,6 +324,7 @@ func (h *Handler) PatchAPIKeyEntry(c *gin.Context) {
 	type apiKeyEntryPatch struct {
 		Key                  *string   `json:"key"`
 		Name                 *string   `json:"name"`
+		UserID               *int64    `json:"user-id"`
 		DailyLimit           *int      `json:"daily-limit"`
 		TotalQuota           *int      `json:"total-quota"`
 		SpendingLimit        *float64  `json:"spending-limit"`
@@ -341,9 +342,32 @@ func (h *Handler) PatchAPIKeyEntry(c *gin.Context) {
 		Match *string           `json:"match"`
 		Value *apiKeyEntryPatch `json:"value"`
 	}
-	if err := c.ShouldBindJSON(&body); err != nil || body.Value == nil {
+
+	// Read raw body first so we can detect whether "user-id" was explicitly present.
+	// *int64 cannot distinguish between "field omitted" and "field set to null".
+	rawBody, rawErr := c.GetRawData()
+	if rawErr != nil {
+		c.JSON(400, gin.H{"error": "failed to read body"})
+		return
+	}
+	if err := json.Unmarshal(rawBody, &body); err != nil || body.Value == nil {
 		c.JSON(400, gin.H{"error": "invalid body"})
 		return
+	}
+
+	var userIDExplicitlySet bool
+	{
+		var patchEnvelope struct {
+			Value json.RawMessage `json:"value"`
+		}
+		if json.Unmarshal(rawBody, &patchEnvelope) == nil {
+			var valueMap map[string]json.RawMessage
+			if json.Unmarshal(patchEnvelope.Value, &valueMap) == nil {
+				if _, ok := valueMap["user-id"]; ok {
+					userIDExplicitlySet = true
+				}
+			}
+		}
 	}
 
 	// Find existing entry by index or match key
@@ -391,6 +415,9 @@ func (h *Handler) PatchAPIKeyEntry(c *gin.Context) {
 	}
 
 	// Apply patches
+	if userIDExplicitlySet {
+		entry.UserID = body.Value.UserID // nil clears the user-id, non-nil sets it
+	}
 	if body.Value.Name != nil {
 		entry.Name = strings.TrimSpace(*body.Value.Name)
 	}

@@ -319,15 +319,17 @@ func (s *RequestStatistics) Record(ctx context.Context, record coreusage.Record)
 	// Look up the display name for this API key so it's persisted in the log.
 	var apiKeyID int64
 	apiKeyName := ""
+	var userID *int64
 	if statsKey != "" {
 		if row := GetAPIKey(statsKey); row != nil {
 			apiKeyID = row.ID
 			if row.Name != "" {
 				apiKeyName = row.Name
 			}
+			userID = row.UserID
 		}
 	}
-	InsertLogWithDetails(apiKeyID, apiKeyName, modelName, record.Source, record.ChannelName,
+	InsertLogWithUserID(apiKeyID, apiKeyName, userID, modelName, record.Source, record.ChannelName,
 		record.AuthIndex, failed, timestamp, record.LatencyMs, record.FirstTokenMs, detail,
 		record.InputContent, record.OutputContent, record.DetailContent)
 

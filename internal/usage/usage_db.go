@@ -21,6 +21,7 @@ type LogRow struct {
 	Timestamp       time.Time `json:"timestamp"`
 	APIKeyID        int64     `json:"api_key_id"`
 	APIKeyName      string    `json:"api_key_name"`
+	UserID          *int64    `json:"user_id,omitempty"`
 	Model           string    `json:"model"`
 	Source          string    `json:"source"`
 	ChannelName     string    `json:"channel_name"`
@@ -43,6 +44,7 @@ type LogQueryParams struct {
 	Size         int      // rows per page
 	Days         int      // time range in days
 	APIKeyID     int64    // filter by api_key_id; 0 = no filter, -1 = system requests (api_key_id = 0)
+	UserID       int64    // filter by user_id; 0 = no filter
 	Model        string   // exact match filter
 	Status       string   // "success", "failed", or "" (all)
 	AuthIndexes  []string // optional auth_index IN (...) filter
@@ -63,11 +65,18 @@ type APIKeyFilterItem struct {
 	Name string `json:"name"`
 }
 
+// UserFilterItem holds a user ID and name for filter dropdowns.
+type UserFilterItem struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 // FilterOptions holds the available filter values for the UI.
 type FilterOptions struct {
-	APIKeys     []APIKeyFilterItem `json:"api_keys"`
-	Models      []string           `json:"models"`
-	Channels    []string           `json:"channels"`
+	APIKeys  []APIKeyFilterItem `json:"api_keys"`
+	Users    []UserFilterItem   `json:"users"`
+	Models   []string           `json:"models"`
+	Channels []string           `json:"channels"`
 }
 
 // LogStats holds aggregated stats over the filtered result set.
@@ -103,6 +112,7 @@ CREATE TABLE IF NOT EXISTS request_logs (
   timestamp        DATETIME NOT NULL,
   api_key_id       INTEGER NOT NULL DEFAULT 0,
   api_key_name     TEXT NOT NULL DEFAULT '',
+  user_id          INTEGER DEFAULT NULL,
   model            TEXT NOT NULL DEFAULT '',
   source           TEXT NOT NULL DEFAULT '',
   channel_name     TEXT NOT NULL DEFAULT '',
@@ -192,6 +202,16 @@ func migrateRequestLogDetailColumn(db *sql.DB) {
 	}
 }
 
+// migrateUserIDColumn adds user_id column to an existing request_logs table.
+func migrateUserIDColumn(db *sql.DB) {
+	_, err := db.Exec("ALTER TABLE request_logs ADD COLUMN user_id INTEGER DEFAULT NULL")
+	if err != nil {
+		if !strings.Contains(err.Error(), "duplicate") {
+			log.Warnf("usage: migrate column user_id: %v", err)
+		}
+	}
+}
+
 // InitDB opens (or creates) the SQLite database at the given path and creates
 // the request_logs table if it doesn't exist.
 // The storageCfg parameter is deprecated and no longer used; content is always stored.
@@ -263,6 +283,8 @@ func InitDB(dbPath string, storageCfg config.RequestLogStorageConfig, loc *time.
 	migrateFirstTokenColumn(db)
 	log.Debugf("usage: running request log detail column migration")
 	migrateRequestLogDetailColumn(db)
+	log.Debugf("usage: running user_id column migration")
+	migrateUserIDColumn(db)
 	log.Debugf("usage: initializing pricing table")
 	initPricingTable(db)
 	log.Debugf("usage: initializing model config tables")
@@ -314,21 +336,28 @@ func CloseDB() {
 func InsertLog(apiKeyID int64, apiKeyName, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent string) {
-	insertLog(apiKeyID, apiKeyName, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, "")
+	insertLog(apiKeyID, apiKeyName, nil, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, "")
 }
 
 func InsertLogWithDetails(apiKeyID int64, apiKeyName, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent, detailContent string) {
-	insertLog(apiKeyID, apiKeyName, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
+	insertLog(apiKeyID, apiKeyName, nil, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
 }
 
-func insertLog(apiKeyID int64, apiKeyName, model, source, channelName, authIndex string,
+// InsertLogWithUserID writes a request log with an associated user_id.
+func InsertLogWithUserID(apiKeyID int64, apiKeyName string, userID *int64, model, source, channelName, authIndex string,
+	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
+	inputContent, outputContent, detailContent string) {
+	insertLog(apiKeyID, apiKeyName, userID, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
+}
+
+func insertLog(apiKeyID int64, apiKeyName string, userID *int64, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent, detailContent string) {
 	// Use GORM if available, otherwise fall back to raw SQL
 	if getGormDB() != nil {
-		GormInsertLog(apiKeyID, apiKeyName, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
+		GormInsertLog(apiKeyID, apiKeyName, userID, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
 		return
 	}
 
@@ -355,11 +384,11 @@ func insertLog(apiKeyID int64, apiKeyName, model, source, channelName, authIndex
 
 	result, err := tx.Exec(
 		`INSERT INTO request_logs
-			(timestamp, api_key_id, api_key_name, model, source, channel_name, auth_index,
+			(timestamp, api_key_id, api_key_name, user_id, model, source, channel_name, auth_index,
 			 failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		timestamp.UTC().Format(time.RFC3339Nano),
-		apiKeyID, apiKeyName, model, source, channelName, authIndex,
+		apiKeyID, apiKeyName, userID, model, source, channelName, authIndex,
 		failedInt, latencyMs, firstTokenMs,
 		tokens.InputTokens, tokens.OutputTokens, tokens.ReasoningTokens,
 		tokens.CachedTokens, tokens.TotalTokens, cost,
@@ -447,7 +476,7 @@ func QueryLogs(params LogQueryParams) (LogQueryResult, error) {
 
 	// Fetch page
 	offset := (params.Page - 1) * params.Size
-	querySQL := "SELECT id, timestamp, api_key_id, api_key_name, model, source, channel_name, auth_index, " +
+	querySQL := "SELECT id, timestamp, api_key_id, api_key_name, user_id, model, source, channel_name, auth_index, " +
 		"failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, " +
 		"cost, " +
 		"(CASE WHEN EXISTS (SELECT 1 FROM request_log_content content WHERE content.log_id = request_logs.id) " +
@@ -468,7 +497,7 @@ func QueryLogs(params LogQueryParams) (LogQueryResult, error) {
 		var ts string
 		var failedInt, hasContentInt int
 		if err := rows.Scan(
-			&row.ID, &ts, &row.APIKeyID, &row.APIKeyName, &row.Model, &row.Source, &row.ChannelName,
+			&row.ID, &ts, &row.APIKeyID, &row.APIKeyName, &row.UserID, &row.Model, &row.Source, &row.ChannelName,
 			&row.AuthIndex, &failedInt, &row.LatencyMs, &row.FirstTokenMs,
 			&row.InputTokens, &row.OutputTokens, &row.ReasoningTokens,
 			&row.CachedTokens, &row.TotalTokens, &row.Cost, &hasContentInt,
@@ -502,6 +531,7 @@ func QueryFilters(days int) (FilterOptions, error) {
 		// Ensure stable JSON shape: slices => [] (not null).
 		return FilterOptions{
 			APIKeys:  make([]APIKeyFilterItem, 0),
+			Users:    make([]UserFilterItem, 0),
 			Models:   make([]string, 0),
 			Channels: make([]string, 0),
 		}, nil
@@ -510,6 +540,10 @@ func QueryFilters(days int) (FilterOptions, error) {
 	cutoff := CutoffStartUTC(days).Format(time.RFC3339)
 
 	keys, err := queryAPIKeyFilterItems(db)
+	if err != nil {
+		return FilterOptions{}, err
+	}
+	users, err := queryUserFilterItems(db, cutoff)
 	if err != nil {
 		return FilterOptions{}, err
 	}
@@ -524,6 +558,7 @@ func QueryFilters(days int) (FilterOptions, error) {
 
 	return FilterOptions{
 		APIKeys:  keys,
+		Users:    users,
 		Models:   models,
 		Channels: channels,
 	}, nil
@@ -1028,6 +1063,10 @@ func buildWhereClause(params LogQueryParams) (string, []interface{}) {
 			args = append(args, params.APIKeyID)
 		}
 	}
+	if params.UserID != 0 {
+		conditions = append(conditions, "user_id = ?")
+		args = append(args, params.UserID)
+	}
 	if params.Model != "" {
 		conditions = append(conditions, "model = ?")
 		args = append(args, params.Model)
@@ -1111,6 +1150,27 @@ func queryAPIKeyFilterItems(db *sql.DB) ([]APIKeyFilterItem, error) {
 	result := make([]APIKeyFilterItem, 0)
 	for rows.Next() {
 		var item APIKeyFilterItem
+		if err := rows.Scan(&item.ID, &item.Name); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func queryUserFilterItems(db *sql.DB, cutoff string) ([]UserFilterItem, error) {
+	rows, err := db.Query(
+		`SELECT DISTINCT u.id, u.name FROM request_logs rl JOIN users u ON u.id = rl.user_id WHERE rl.timestamp >= ? AND rl.user_id IS NOT NULL ORDER BY u.name`,
+		cutoff,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("usage: query user filter items: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]UserFilterItem, 0)
+	for rows.Next() {
+		var item UserFilterItem
 		if err := rows.Scan(&item.ID, &item.Name); err != nil {
 			return nil, err
 		}

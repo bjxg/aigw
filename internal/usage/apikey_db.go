@@ -16,6 +16,7 @@ type APIKeyRow struct {
 	ID                   int64    `json:"id"`
 	Key                  string   `json:"key"`
 	Name                 string   `json:"name,omitempty"`
+	UserID               *int64   `json:"user-id,omitempty"`
 	Disabled             bool     `json:"disabled,omitempty"`
 	DailyLimit           int      `json:"daily-limit,omitempty"`
 	TotalQuota           int      `json:"total-quota,omitempty"`
@@ -37,6 +38,7 @@ func (r *APIKeyRow) ToConfigEntry() config.APIKeyEntry {
 		ID:                   r.ID,
 		Key:                  r.Key,
 		Name:                 r.Name,
+		UserID:               r.UserID,
 		Disabled:             r.Disabled,
 		DailyLimit:           r.DailyLimit,
 		TotalQuota:           r.TotalQuota,
@@ -58,6 +60,7 @@ func APIKeyRowFromConfig(entry config.APIKeyEntry) APIKeyRow {
 		ID:                   entry.ID,
 		Key:                  entry.Key,
 		Name:                 entry.Name,
+		UserID:               entry.UserID,
 		Disabled:             entry.Disabled,
 		DailyLimit:           entry.DailyLimit,
 		TotalQuota:           entry.TotalQuota,
@@ -78,6 +81,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   key               TEXT NOT NULL UNIQUE,
   name              TEXT NOT NULL DEFAULT '',
+  user_id           INTEGER DEFAULT NULL,
   disabled          INTEGER NOT NULL DEFAULT 0,
   daily_limit       INTEGER NOT NULL DEFAULT 0,
   total_quota       INTEGER NOT NULL DEFAULT 0,
@@ -109,6 +113,7 @@ func migrateAPIKeyColumns(db *sql.DB) {
 	}{
 		{name: "allowed_channels", definition: "TEXT NOT NULL DEFAULT '[]'"},
 		{name: "allowed_channel_groups", definition: "TEXT NOT NULL DEFAULT '[]'"},
+		{name: "user_id", definition: "INTEGER DEFAULT NULL"},
 	} {
 		if _, err := db.Exec("ALTER TABLE api_keys ADD COLUMN " + col.name + " " + col.definition); err != nil {
 			if !strings.Contains(strings.ToLower(err.Error()), "duplicate") {
@@ -265,9 +270,9 @@ func MigrateAPIKeysFromConfig(cfg *config.Config, configFilePath string) int {
 	}
 
 	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO api_keys
-		(key, name, disabled, daily_limit, total_quota, spending_limit,
+		(key, name, user_id, disabled, daily_limit, total_quota, spending_limit,
 		 concurrency_limit, rpm_limit, tpm_limit, allowed_models, allowed_channels, allowed_channel_groups, system_prompt, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		_ = tx.Rollback()
 		log.Errorf("usage: prepare api_keys migration: %v", err)
@@ -294,7 +299,7 @@ func MigrateAPIKeysFromConfig(cfg *config.Config, configFilePath string) int {
 			disabledInt = 1
 		}
 		if _, err := stmt.Exec(
-			row.Key, row.Name, disabledInt,
+			row.Key, row.Name, row.UserID, disabledInt,
 			row.DailyLimit, row.TotalQuota, row.SpendingLimit,
 			row.ConcurrencyLimit, row.RPMLimit, row.TPMLimit,
 			string(modelsJSON), string(channelsJSON), string(channelGroupsJSON), row.SystemPrompt,
@@ -338,7 +343,7 @@ func ListAPIKeys() []APIKeyRow {
 		return nil
 	}
 
-	rows, err := db.Query(`SELECT id, key, name, disabled, daily_limit, total_quota,
+	rows, err := db.Query(`SELECT id, key, name, user_id, disabled, daily_limit, total_quota,
 		spending_limit, concurrency_limit, rpm_limit, tpm_limit,
 		allowed_models, allowed_channels, allowed_channel_groups, system_prompt, created_at, updated_at
 		FROM api_keys ORDER BY created_at ASC`)
@@ -361,7 +366,7 @@ func GetAPIKey(key string) *APIKeyRow {
 		return nil
 	}
 
-	row := db.QueryRow(`SELECT id, key, name, disabled, daily_limit, total_quota,
+	row := db.QueryRow(`SELECT id, key, name, user_id, disabled, daily_limit, total_quota,
 		spending_limit, concurrency_limit, rpm_limit, tpm_limit,
 		allowed_models, allowed_channels, allowed_channel_groups, system_prompt, created_at, updated_at
 		FROM api_keys WHERE key = ?`, key)
@@ -379,7 +384,7 @@ func GetAPIKeyByID(id int64) *APIKeyRow {
 		return nil
 	}
 
-	row := db.QueryRow(`SELECT id, key, name, disabled, daily_limit, total_quota,
+	row := db.QueryRow(`SELECT id, key, name, user_id, disabled, daily_limit, total_quota,
 		spending_limit, concurrency_limit, rpm_limit, tpm_limit,
 		allowed_models, allowed_channels, allowed_channel_groups, system_prompt, created_at, updated_at
 		FROM api_keys WHERE id = ?`, id)
@@ -426,11 +431,11 @@ func UpsertAPIKey(entry APIKeyRow) error {
 	}
 
 	_, err := db.Exec(`INSERT INTO api_keys
-		(key, name, disabled, daily_limit, total_quota, spending_limit,
+		(key, name, user_id, disabled, daily_limit, total_quota, spending_limit,
 		 concurrency_limit, rpm_limit, tpm_limit, allowed_models, allowed_channels, allowed_channel_groups, system_prompt, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET
-			name=excluded.name, disabled=excluded.disabled,
+			name=excluded.name, user_id=excluded.user_id, disabled=excluded.disabled,
 			daily_limit=excluded.daily_limit, total_quota=excluded.total_quota,
 			spending_limit=excluded.spending_limit, concurrency_limit=excluded.concurrency_limit,
 			rpm_limit=excluded.rpm_limit, tpm_limit=excluded.tpm_limit,
@@ -438,7 +443,7 @@ func UpsertAPIKey(entry APIKeyRow) error {
 			allowed_channel_groups=excluded.allowed_channel_groups,
 			system_prompt=excluded.system_prompt,
 			updated_at=excluded.updated_at`,
-		trimmed, entry.Name, disabledInt,
+		trimmed, entry.Name, entry.UserID, disabledInt,
 		entry.DailyLimit, entry.TotalQuota, entry.SpendingLimit,
 		entry.ConcurrencyLimit, entry.RPMLimit, entry.TPMLimit,
 		string(modelsJSON), string(channelsJSON), string(channelGroupsJSON), entry.SystemPrompt,
@@ -494,9 +499,9 @@ func ReplaceAllAPIKeys(entries []APIKeyRow) error {
 	}
 
 	stmt, err := tx.Prepare(`INSERT INTO api_keys
-		(key, name, disabled, daily_limit, total_quota, spending_limit,
+		(key, name, user_id, disabled, daily_limit, total_quota, spending_limit,
 		 concurrency_limit, rpm_limit, tpm_limit, allowed_models, allowed_channels, allowed_channel_groups, system_prompt, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
@@ -531,7 +536,7 @@ func ReplaceAllAPIKeys(entries []APIKeyRow) error {
 			entry.CreatedAt = now
 		}
 		if _, err := stmt.Exec(
-			trimmed, entry.Name, disabledInt,
+			trimmed, entry.Name, entry.UserID, disabledInt,
 			entry.DailyLimit, entry.TotalQuota, entry.SpendingLimit,
 			entry.ConcurrencyLimit, entry.RPMLimit, entry.TPMLimit,
 			string(modelsJSON), string(channelsJSON), string(channelGroupsJSON), entry.SystemPrompt,
@@ -569,7 +574,7 @@ func scanAPIKeyFromRow(row scannable) *APIKeyRow {
 	var channelsJSON string
 	var channelGroupsJSON string
 	if err := row.Scan(
-		&r.ID, &r.Key, &r.Name, &disabledInt,
+		&r.ID, &r.Key, &r.Name, &r.UserID, &disabledInt,
 		&r.DailyLimit, &r.TotalQuota, &r.SpendingLimit,
 		&r.ConcurrencyLimit, &r.RPMLimit, &r.TPMLimit,
 		&modelsJSON, &channelsJSON, &channelGroupsJSON, &r.SystemPrompt,
@@ -597,7 +602,7 @@ func scanSingleAPIKeyRow(row *sql.Row) *APIKeyRow {
 	var channelsJSON string
 	var channelGroupsJSON string
 	if err := row.Scan(
-		&r.ID, &r.Key, &r.Name, &disabledInt,
+		&r.ID, &r.Key, &r.Name, &r.UserID, &disabledInt,
 		&r.DailyLimit, &r.TotalQuota, &r.SpendingLimit,
 		&r.ConcurrencyLimit, &r.RPMLimit, &r.TPMLimit,
 		&modelsJSON, &channelsJSON, &channelGroupsJSON, &r.SystemPrompt,

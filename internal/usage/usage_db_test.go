@@ -805,7 +805,7 @@ func TestInsertLogContentTxSkipsSingleRowLargerThanSizeCap(t *testing.T) {
 	}
 
 	// Use GORM path since GORM is now active
-	GormInsertLog(1, "", "model", "source", "channel", "auth-large",
+	GormInsertLog(1, "", nil, "model", "source", "channel", "auth-large",
 		false, time.Now().UTC(), 5, 1, TokenStats{InputTokens: 1, TotalTokens: 2}, payload, "", "")
 
 	// Verify content was stored (previously, content exceeding MaxTotalSizeMB was skipped)

@@ -70,6 +70,7 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 		Size:         intQueryDefault(c, "size", 50),
 		Days:         intQueryDefault(c, "days", 7),
 		APIKeyID:     int64QueryDefault(c, "api_key_id", 0),
+		UserID:       int64QueryDefault(c, "user_id", 0),
 		Model:        strings.TrimSpace(c.Query("model")),
 		Status:       strings.TrimSpace(c.Query("status")),
 		AuthIndexes:  authIndexes,
@@ -152,6 +153,9 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 	}
 	if filters.APIKeys == nil {
 		filters.APIKeys = make([]usage.APIKeyFilterItem, 0)
+	}
+	if filters.Users == nil {
+		filters.Users = make([]usage.UserFilterItem, 0)
 	}
 	if filters.Models == nil {
 		filters.Models = make([]string, 0)

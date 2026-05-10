@@ -15,6 +15,7 @@ type RequestLog struct {
 	Timestamp       time.Time `gorm:"index:idx_logs_timestamp;not null" json:"timestamp"`
 	APIKeyID        int64     `gorm:"index:idx_logs_api_key_id;not null;default:0" json:"api_key_id"`
 	APIKeyName      string    `gorm:"not null;default:''" json:"api_key_name"`
+	UserID          *int64    `gorm:"index:idx_logs_user_id;default:NULL" json:"user_id,omitempty"`
 	Model           string    `gorm:"index:idx_logs_model;not null;default:''" json:"model"`
 	Source          string    `gorm:"not null;default:''" json:"source"`
 	ChannelName     string    `gorm:"not null;default:''" json:"channel_name"`
@@ -57,6 +58,7 @@ type APIKey struct {
 	ID                   int64   `gorm:"primaryKey;autoIncrement" json:"id"`
 	Key                  string  `gorm:"uniqueIndex;not null" json:"key"`
 	Name                 string  `gorm:"not null;default:''" json:"name"`
+	UserID               *int64  `gorm:"index:idx_api_keys_user_id;default:NULL" json:"user_id,omitempty"`
 	Disabled             bool    `gorm:"not null;default:false" json:"disabled"`
 	DailyLimit           int     `gorm:"not null;default:0" json:"daily_limit"`
 	TotalQuota           int     `gorm:"not null;default:0" json:"total_quota"`
