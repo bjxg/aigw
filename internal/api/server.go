@@ -604,6 +604,11 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.GET("/api-key-permission-profiles", s.mgmt.GetAPIKeyPermissionProfiles)
 		mgmt.PUT("/api-key-permission-profiles", s.mgmt.PutAPIKeyPermissionProfiles)
 
+		mgmt.GET("/users", s.mgmt.GetUsers)
+		mgmt.POST("/users", s.mgmt.PostUser)
+		mgmt.PUT("/users/:id", s.mgmt.PutUser)
+		mgmt.DELETE("/users/:id", s.mgmt.DeleteUser)
+
 		mgmt.GET("/api-key-entries", s.mgmt.GetAPIKeyEntries)
 		mgmt.PUT("/api-key-entries", s.mgmt.PutAPIKeyEntries)
 		mgmt.PATCH("/api-key-entries", s.mgmt.PatchAPIKeyEntry)

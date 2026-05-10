@@ -207,6 +207,44 @@ type RuntimeSetting struct {
 // TableName overrides the table name.
 func (RuntimeSetting) TableName() string { return "runtime_settings" }
 
+// --- User ---
+
+// UserRole constants for the User.Role field.
+const (
+	UserRoleAdmin    = "admin"
+	UserRoleUser     = "user"
+	UserRolePending  = "pending"
+	UserRoleDisabled = "disabled"
+)
+
+// validUserRoles contains the allowed role values.
+var validUserRoles = map[string]bool{
+	UserRoleAdmin:    true,
+	UserRoleUser:     true,
+	UserRolePending:  true,
+	UserRoleDisabled: true,
+}
+
+// IsValidUserRole checks whether the given role string is a valid User role.
+func IsValidUserRole(role string) bool {
+	return validUserRoles[role]
+}
+
+// User maps to the users table.
+type User struct {
+	ID        int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name      string     `gorm:"size:255;not null;default:''" json:"name"`
+	Username  *string    `gorm:"size:255;uniqueIndex:idx_users_username,where:username IS NOT NULL" json:"username,omitempty"`
+	Email     *string    `gorm:"size:255;uniqueIndex:idx_users_email,where:email IS NOT NULL" json:"email,omitempty"`
+	Role      string     `gorm:"size:50;not null;default:'pending'" json:"role"`
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	CreatedAt time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+// TableName overrides the table name.
+func (User) TableName() string { return "users" }
+
 // --- JSONStringList helper type ---
 
 // JSONStringList is a helper type for storing []string as JSON in TEXT columns.
@@ -263,6 +301,7 @@ func AllModels() []interface{} {
 		&RoutingConfig{},
 		&ProxyPool{},
 		&RuntimeSetting{},
+		&User{},
 	}
 }
 
