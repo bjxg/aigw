@@ -509,6 +509,28 @@ func (s *Service) Run(ctx context.Context) error {
 	// handlers no longer depend on legacy clients; pass nil slice initially
 	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, s.serverOptions...)
 
+	if s.server != nil {
+		s.server.SetManagementOnConfigChanged(func(cfg *config.Config) {
+			if cfg == nil {
+				return
+			}
+			s.cfgMu.Lock()
+			s.cfg = cfg
+			s.cfgMu.Unlock()
+			if s.coreManager != nil {
+				s.coreManager.SetConfig(cfg)
+			}
+			if s.coreManager != nil {
+				for _, auth := range s.coreManager.List() {
+					if auth == nil {
+						continue
+					}
+					s.registerModelsForAuth(context.Background(), auth)
+				}
+			}
+		})
+	}
+
 	if s.authManager == nil {
 		s.authManager = newDefaultAuthManager()
 	}

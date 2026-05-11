@@ -1462,6 +1462,17 @@ func (s *Server) SetWebsocketAuthChangeHandler(fn func(bool, bool)) {
 	s.wsAuthChanged = fn
 }
 
+// SetManagementOnConfigChanged wires the callback that management handler invokes
+// after persisting config changes (e.g. openai-compatibility edits).
+// The caller (usually cliproxy.Service) should use this to refresh runtime state
+// such as the global model registry when file-watch based reload is skipped.
+func (s *Server) SetManagementOnConfigChanged(fn func(*config.Config)) {
+	if s == nil || s.mgmt == nil {
+		return
+	}
+	s.mgmt.SetOnConfigChanged(fn)
+}
+
 // (management handlers moved to internal/api/handlers/management)
 
 // AuthMiddleware returns a Gin middleware handler that authenticates requests

@@ -55,6 +55,7 @@ type Handler struct {
 	accessManager       *sdkaccess.Manager
 	imageTasksMu        sync.Mutex
 	imageTasks          map[string]*imageGenerationTask
+	onConfigChanged     func(*config.Config)
 }
 
 // NewHandler creates a new management handler instance.
@@ -161,6 +162,13 @@ func (h *Handler) SetLogDirectory(dir string) {
 // SetPostAuthHook registers a hook to be called after auth record creation but before persistence.
 func (h *Handler) SetPostAuthHook(hook coreauth.PostAuthHook) {
 	h.postAuthHook = hook
+}
+
+// SetOnConfigChanged registers a callback to be invoked after the in-memory config is updated
+// by management writes (e.g. openai-compatibility edits). Callers can use this to refresh
+// runtime state such as the global model registry when file-watch based reload is skipped.
+func (h *Handler) SetOnConfigChanged(fn func(*config.Config)) {
+	h.onConfigChanged = fn
 }
 
 // Middleware enforces access control for management endpoints.
@@ -321,6 +329,12 @@ func (h *Handler) persist(c *gin.Context) bool {
 	}
 	if usage.ConfigStoreAvailable() {
 		usage.CleanDBBackedConfigFromYAML(h.configFilePath)
+	}
+	if h.authManager != nil {
+		h.authManager.SetConfig(h.cfg)
+	}
+	if h.onConfigChanged != nil {
+		h.onConfigChanged(h.cfg)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	return true
