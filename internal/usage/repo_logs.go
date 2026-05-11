@@ -128,45 +128,71 @@ func (r *gormLogRepo) Query(ctx context.Context, params LogQueryParams) (LogQuer
 
 	// Fetch page with has_content subquery
 	offset := (params.Page - 1) * params.Size
-	var items []LogRow
 
-	selectFields := `id, timestamp, api_key_id, api_key_name, user_id, model, source, channel_name, auth_index,
-		failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost,
-		(CASE WHEN EXISTS (SELECT 1 FROM request_log_content content WHERE content.log_id = request_logs.id)
-			OR length(input_content) > 0 OR length(output_content) > 0 THEN 1 ELSE 0 END) as has_content`
+	// logRowScan is used to scan DB rows into a flat structure, then copy to LogRow.
+	type logRowScan struct {
+		ID              int64
+		Timestamp       time.Time
+		APIKeyID        int64
+		APIKeyName      string
+		UserID          *int64
+		Model           string
+		Source          string
+		ChannelName     string
+		AuthIndex       string
+		Failed          bool // GORM handles both SQLite (int) and PostgreSQL (bool) natively
+		LatencyMs       int64
+		FirstTokenMs    int64
+		InputTokens     int64
+		OutputTokens    int64
+		ReasoningTokens int64
+		CachedTokens    int64
+		TotalTokens     int64
+		Cost            float64
+		HasContent      int // subquery returns int, kept as-is
+	}
 
-	rows, err := query.Select(selectFields).
+	var scanRows []logRowScan
+	result := query.
+		Select(`id, timestamp, api_key_id, api_key_name, user_id, model, source, channel_name, auth_index,
+			failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost,
+			(CASE WHEN EXISTS (SELECT 1 FROM request_log_content content WHERE content.log_id = request_logs.id)
+				OR length(input_content) > 0 OR length(output_content) > 0 THEN 1 ELSE 0 END) as has_content`).
 		Order("timestamp DESC").
 		Limit(params.Size).
 		Offset(offset).
-		Rows()
-	if err != nil {
-		return LogQueryResult{}, fmt.Errorf("usage: query logs: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var row LogRow
-		var failedInt, hasContentInt int
-		if err := rows.Scan(
-			&row.ID, &row.Timestamp, &row.APIKeyID, &row.APIKeyName, &row.UserID, &row.Model, &row.Source, &row.ChannelName,
-			&row.AuthIndex, &failedInt, &row.LatencyMs, &row.FirstTokenMs,
-			&row.InputTokens, &row.OutputTokens, &row.ReasoningTokens,
-			&row.CachedTokens, &row.TotalTokens, &row.Cost, &hasContentInt,
-		); err != nil {
-			return LogQueryResult{}, fmt.Errorf("usage: scan row: %w", err)
-		}
-		row.Failed = failedInt != 0
-		row.HasContent = hasContentInt != 0
-		items = append(items, row)
+		Scan(&scanRows)
+	if result.Error != nil {
+		return LogQueryResult{}, fmt.Errorf("usage: query logs: %w", result.Error)
 	}
 
-	if items == nil {
-		items = make([]LogRow, 0)
+	resultItems := make([]LogRow, 0, len(scanRows))
+	for _, s := range scanRows {
+		resultItems = append(resultItems, LogRow{
+			ID:              s.ID,
+			Timestamp:       s.Timestamp,
+			APIKeyID:        s.APIKeyID,
+			APIKeyName:      s.APIKeyName,
+			UserID:          s.UserID,
+			Model:           s.Model,
+			Source:          s.Source,
+			ChannelName:     s.ChannelName,
+			AuthIndex:       s.AuthIndex,
+			Failed:          s.Failed,
+			LatencyMs:       s.LatencyMs,
+			FirstTokenMs:    s.FirstTokenMs,
+			InputTokens:     s.InputTokens,
+			OutputTokens:    s.OutputTokens,
+			ReasoningTokens: s.ReasoningTokens,
+			CachedTokens:    s.CachedTokens,
+			TotalTokens:     s.TotalTokens,
+			Cost:            s.Cost,
+			HasContent:      s.HasContent != 0,
+		})
 	}
 
 	return LogQueryResult{
-		Items: items,
+		Items: resultItems,
 		Total: total,
 		Page:  params.Page,
 		Size:  params.Size,
@@ -654,7 +680,7 @@ func (r *gormLogRepo) QueryAPIKeyDistribution(ctx context.Context, days int) ([]
 	cutoff := CutoffStartUTC(days)
 	var results []APIKeyDistributionPoint
 	err := r.db.WithContext(ctx).Model(&RequestLog{}).
-		Select("api_key_id, COALESCE(NULLIF(MAX(api_key_name),''), k.name, '') as name, COUNT(*) as requests, COALESCE(SUM(total_tokens),0) as tokens").
+		Select("api_key_id, COALESCE(NULLIF(MAX(api_key_name),''), MAX(k.name), '') as name, COUNT(*) as requests, COALESCE(SUM(total_tokens),0) as tokens").
 		Joins("LEFT JOIN api_keys k ON k.id = api_key_id").
 		Where("timestamp >= ? AND api_key_id != 0", cutoff).
 		Group("api_key_id").
