@@ -183,3 +183,42 @@ func TestApplyAPIKeyModelAlias(t *testing.T) {
 		})
 	}
 }
+
+type testModelAliasEntry struct {
+	name  string
+	alias string
+}
+
+func (e testModelAliasEntry) GetName() string  { return e.name }
+func (e testModelAliasEntry) GetAlias() string { return e.alias }
+
+func TestResolveModelAliasFromConfigModels_SlowPath(t *testing.T) {
+	models := []modelAliasEntry{
+		testModelAliasEntry{name: "moonshotai/kimi-k2:free", alias: "kimi-k2"},
+		testModelAliasEntry{name: "gemini-2.5-pro", alias: "g25p"},
+	}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"alias to name", "kimi-k2", "moonshotai/kimi-k2:free"},
+		{"alias with suffix", "kimi-k2(8192)", "moonshotai/kimi-k2:free(8192)"},
+		{"name stays name", "moonshotai/kimi-k2:free", "moonshotai/kimi-k2:free"},
+		{"name with suffix stays name", "moonshotai/kimi-k2:free(4096)", "moonshotai/kimi-k2:free(4096)"},
+		{"uppercase alias", "KIMI-K2", "moonshotai/kimi-k2:free"},
+		{"uppercase name", "MOONSHOTAI/KIMI-K2:FREE", "moonshotai/kimi-k2:free"},
+		{"unknown model", "unknown", ""},
+		{"empty model", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveModelAliasFromConfigModels(tt.input, models)
+			if got != tt.expected {
+				t.Errorf("resolveModelAliasFromConfigModels(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}

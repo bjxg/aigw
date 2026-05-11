@@ -2842,7 +2842,7 @@ func resolveModelAliasFromConfigModels(requestedModel string, models []modelAlia
 				continue
 			}
 			if strings.EqualFold(name, candidate) {
-				return preserveSuffix(alias)
+				return preserveSuffix(name)
 			}
 			if strings.EqualFold(alias, candidate) {
 				return preserveSuffix(name)
