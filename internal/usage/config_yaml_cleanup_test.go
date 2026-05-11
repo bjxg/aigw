@@ -17,7 +17,7 @@ func setupConfigMigrationTestDB(t *testing.T) func() {
 
 	CloseDB()
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	if err := InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB() error = %v", err)
 	}
 	stopRequestLogMaintenance()

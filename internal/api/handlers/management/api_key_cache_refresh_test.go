@@ -27,7 +27,7 @@ func TestRefreshAPIKeyCacheUpdatesLiveAccessManager(t *testing.T) {
 		_ = os.Remove(dbPath + "-shm")
 	}()
 
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 

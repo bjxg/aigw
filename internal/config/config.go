@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -42,6 +43,9 @@ type Config struct {
 
 	// Redis config controls the Redis connection for usage persistence.
 	Redis RedisConfig `yaml:"redis" json:"redis"`
+
+	// Database config controls the database driver, connection parameters, and connection pool.
+	Database DatabaseConfig `yaml:"database" json:"database"`
 
 	// TLS config controls HTTPS server settings.
 	TLS TLSConfig `yaml:"tls" json:"tls"`
@@ -258,6 +262,20 @@ type TLSConfig struct {
 	Cert string `yaml:"cert" json:"cert"`
 	// Key is the path to the TLS private key file.
 	Key string `yaml:"key" json:"key"`
+}
+
+// DatabaseConfig holds database driver and connection settings.
+type DatabaseConfig struct {
+	// Driver specifies the database driver: "sqlite" (default) or "postgres".
+	Driver string `yaml:"driver" json:"driver"`
+	// URL is the database connection URL. For SQLite it is a file path; for PostgreSQL it is a standard connection URL.
+	URL string `yaml:"url" json:"url"`
+	// MaxOpenConns controls the maximum number of open connections to the database.
+	// For SQLite this is forced to 1 regardless of this value.
+	MaxOpenConns int `yaml:"max-open-conns" json:"max-open-conns"`
+	// MaxIdleConns controls the maximum number of idle connections retained.
+	// For SQLite this is forced to 0 regardless of this value.
+	MaxIdleConns int `yaml:"max-idle-conns" json:"max-idle-conns"`
 }
 
 // PprofConfig holds pprof HTTP server settings.
@@ -728,6 +746,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.Pprof.Addr = DefaultPprofAddr
 	cfg.AmpCode.RestrictManagementToLocalhost = false // Default to false: API key auth is sufficient
 	cfg.RemoteManagement.PanelGitHubRepository = DefaultPanelGitHubRepository
+	cfg.Database.Driver = "sqlite"
 	if err = yaml.Unmarshal(data, &cfg); err != nil {
 		if optional {
 			// In cloud deploy mode, if YAML parsing fails, return empty config instead of error.
@@ -832,6 +851,14 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	// Validate raw payload rules and drop invalid entries.
 	cfg.SanitizePayloadRules()
 
+	// Default URL: if URL is empty and driver is sqlite, derive from config file directory.
+	if cfg.Database.URL == "" && cfg.Database.Driver == "sqlite" && configFile != "" {
+		cfg.Database.URL = filepath.Join(filepath.Dir(configFile), "data", "usage.db")
+	}
+
+	// Normalize and validate database configuration.
+	cfg.SanitizeDatabase()
+
 	// NOTE: Legacy migration persistence is intentionally disabled together with
 	// startup legacy migration to keep startup read-only for config.yaml.
 	// Re-enable the block below if automatic startup migration is needed again.
@@ -868,6 +895,20 @@ func (cfg *Config) SanitizePayloadRules() {
 	}
 	cfg.Payload.DefaultRaw = sanitizePayloadRawRules(cfg.Payload.DefaultRaw, "default-raw")
 	cfg.Payload.OverrideRaw = sanitizePayloadRawRules(cfg.Payload.OverrideRaw, "override-raw")
+}
+
+// SanitizeDatabase normalizes and validates the database configuration.
+func (cfg *Config) SanitizeDatabase() {
+	if cfg == nil {
+		return
+	}
+	cfg.Database.Driver = strings.TrimSpace(strings.ToLower(cfg.Database.Driver))
+	if cfg.Database.Driver == "" {
+		cfg.Database.Driver = "sqlite"
+	}
+	if cfg.Database.Driver != "sqlite" && cfg.Database.Driver != "postgres" {
+		cfg.Database.Driver = "sqlite"
+	}
 }
 
 func sanitizePayloadRawRules(rules []PayloadRule, section string) []PayloadRule {

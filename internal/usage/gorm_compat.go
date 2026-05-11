@@ -14,7 +14,7 @@ import (
 // InitDB opens (or creates) the database and initializes GORM.
 // It uses db.Open to create a GORM connection with the appropriate driver,
 // then runs AutoMigrate and seeds initial data.
-func InitDB(dbPath string, storageCfg config.RequestLogStorageConfig, loc *time.Location) error {
+func InitDB(driver, dsn string, storageCfg config.RequestLogStorageConfig, loc *time.Location) error {
 	usageDBMu.Lock()
 	defer usageDBMu.Unlock()
 
@@ -26,12 +26,12 @@ func InitDB(dbPath string, storageCfg config.RequestLogStorageConfig, loc *time.
 		loc = time.Local
 	}
 	usageLoc = loc
-	usageDBPath = dbPath
+	usageDBPath = dsn
 	requestLogStorage = normalizeRequestLogStorageConfig(storageCfg)
 
-	log.Debugf("usage: opening database at %s", dbPath)
+	log.Debugf("usage: opening database driver=%s url=%s", driver, dsn)
 
-	gormDB, err := db.Open("sqlite", dbPath)
+	gormDB, err := db.Open(driver, dsn, 0, 0)
 	if err != nil {
 		return fmt.Errorf("usage: open database: %w", err)
 	}
@@ -71,7 +71,7 @@ func InitDB(dbPath string, storageCfg config.RequestLogStorageConfig, loc *time.
 	log.Debugf("usage: ensuring openrouter model sync state row")
 	GormEnsureOpenRouterModelSyncStateRow()
 
-	log.Infof("usage: database initialised at %s", dbPath)
+	log.Infof("usage: database initialised driver=%s url=%s", driver, dsn)
 	return nil
 }
 

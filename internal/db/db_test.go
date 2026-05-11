@@ -16,7 +16,7 @@ func TestOpen_SQLite(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	got, err := Open("sqlite", dbPath)
+	got, err := Open("sqlite", dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -62,7 +62,7 @@ func TestOpen_InvalidDriver(t *testing.T) {
 	// Reset global state
 	gormDB = nil
 
-	_, err := Open("postgres", "host=localhost")
+	_, err := Open("postgres", "host=localhost", 0, 0)
 	if err == nil {
 		t.Fatal("Open() with unsupported driver should return error")
 	}
@@ -77,12 +77,12 @@ func TestOpen_Idempotent(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	db1, err := Open("sqlite", dbPath)
+	db1, err := Open("sqlite", dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("First Open() error = %v", err)
 	}
 
-	db2, err := Open("sqlite", dbPath)
+	db2, err := Open("sqlite", dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("Second Open() error = %v", err)
 	}
@@ -101,7 +101,7 @@ func TestAutoMigrate(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	d, err := Open("sqlite", dbPath)
+	d, err := Open("sqlite", dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -139,7 +139,7 @@ func TestDateTruncExpr(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	d, err := Open("sqlite", dbPath)
+	d, err := Open("sqlite", dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -172,7 +172,7 @@ func TestSQLiteFileCreation(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "creation_test.db")
 
-	_, err := Open("sqlite", dbPath)
+	_, err := Open("sqlite", dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -192,7 +192,7 @@ func TestBasicCRUD(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "crud_test.db")
 
-	d, err := Open("sqlite", dbPath)
+	d, err := Open("sqlite", dbPath, 0, 0)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}

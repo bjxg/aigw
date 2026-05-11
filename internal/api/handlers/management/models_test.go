@@ -19,7 +19,7 @@ func initManagementModelsTestDB(t *testing.T) {
 	t.Helper()
 	usage.CloseDB()
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB() error = %v", err)
 	}
 	t.Cleanup(usage.CloseDB)

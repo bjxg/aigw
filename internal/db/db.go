@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -26,7 +27,8 @@ var (
 // Supported drivers: "sqlite", "postgres".
 // For SQLite, it opens the database using modernc.org/sqlite (pure Go, no CGO),
 // then wraps it with GORM's SQLite dialector to avoid driver registration conflicts.
-func Open(driver, dsn string) (*gorm.DB, error) {
+// For PostgreSQL, it opens using pgx connection pool and wraps with GORM's postgres dialector.
+func Open(driver, dsn string, maxOpenConns, maxIdleConns int) (*gorm.DB, error) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -37,6 +39,8 @@ func Open(driver, dsn string) (*gorm.DB, error) {
 	switch driver {
 	case "sqlite", "":
 		return openSQLite(dsn)
+	case "postgres":
+		return openPostgres(dsn, maxOpenConns, maxIdleConns)
 	default:
 		return nil, fmt.Errorf("db: unsupported driver %q", driver)
 	}
@@ -82,6 +86,45 @@ func openSQLite(dsn string) (*gorm.DB, error) {
 
 	gormDB = db
 	log.Infof("db: sqlite database initialised")
+	return gormDB, nil
+}
+
+// openPostgres opens a PostgreSQL database using pgx connection pool and wraps it with GORM.
+func openPostgres(dsn string, maxOpenConns, maxIdleConns int) (*gorm.DB, error) {
+	if maxOpenConns <= 0 {
+		maxOpenConns = 25
+	}
+	if maxIdleConns <= 0 {
+		maxIdleConns = 5
+	}
+	if maxIdleConns > maxOpenConns {
+		maxIdleConns = maxOpenConns
+	}
+
+	dialector := postgres.Open(dsn)
+
+	gormConfig := &gorm.Config{
+		Logger:                 newGormLogrusLogger(),
+		SkipDefaultTransaction: true,
+		PrepareStmt:            true,
+	}
+
+	db, err := gorm.Open(dialector, gormConfig)
+	if err != nil {
+		return nil, fmt.Errorf("db: gorm open postgres: %w", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("db: get postgres underlying db: %w", err)
+	}
+
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	gormDB = db
+	log.Infof("db: postgres database initialised (max_open=%d, max_idle=%d)", maxOpenConns, maxIdleConns)
 	return gormDB, nil
 }
 

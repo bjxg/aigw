@@ -14,7 +14,7 @@ func initModelConfigTestDB(t *testing.T) {
 	t.Helper()
 	CloseDB()
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	if err := InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB() error = %v", err)
 	}
 	t.Cleanup(CloseDB)
@@ -135,7 +135,7 @@ func TestInitDBMergesLegacyPricingWithoutDeadlock(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC)
+		done <- InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC)
 	}()
 
 	select {

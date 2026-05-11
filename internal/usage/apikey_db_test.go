@@ -13,7 +13,7 @@ func setupTestDB(t *testing.T) func() {
 	t.Helper()
 	CloseDB()
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	if err := InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB() error = %v", err)
 	}
 	stopRequestLogMaintenance()

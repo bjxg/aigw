@@ -17,7 +17,7 @@ func TestGetDashboardSummaryIncludesTrendsAndMeta(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{StoreContent: false}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{StoreContent: false}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(usage.CloseDB)
@@ -87,7 +87,7 @@ func TestGetDashboardSummaryIncludesTotalCost(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{StoreContent: false}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{StoreContent: false}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(usage.CloseDB)
@@ -130,7 +130,7 @@ func TestGetDashboardSummaryCountsAPIKeysFromSQLite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{StoreContent: false}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{StoreContent: false}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(usage.CloseDB)

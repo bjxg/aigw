@@ -183,7 +183,7 @@ func TestProxyPoolHandlersUseSQLiteWhenAvailable(t *testing.T) {
 func usageTestProxyPoolDB(t *testing.T) func() {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, nil); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, nil); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	return usage.CloseDB

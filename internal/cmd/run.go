@@ -32,20 +32,30 @@ func StartService(cfg *config.Config, configPath string, localPassword string) {
 	loc := config.ApplyTimeZone(cfg.Timezone)
 	dataDir := filepath.Join(filepath.Dir(configPath), "data")
 	_ = os.MkdirAll(dataDir, 0755)
-	dbPath := filepath.Join(dataDir, "usage.db")
+
+	// Build URL: use cfg.Database.URL if set, otherwise fall back to dataDir/usage.db
+	url := cfg.Database.URL
+	if url == "" {
+		url = filepath.Join(dataDir, "usage.db")
+	}
+	dbDriver := cfg.Database.Driver
+	if dbDriver == "" {
+		dbDriver = "sqlite"
+	}
 
 	// Migrate legacy usage.db from config directory to data/ subdirectory.
-	if oldPath := filepath.Join(filepath.Dir(configPath), "usage.db"); oldPath != dbPath {
-		if _, err := os.Stat(oldPath); err == nil {
-			if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-				if err := os.Rename(oldPath, dbPath); err != nil {
-					log.Warnf("usage: failed to migrate %s → %s: %v", oldPath, dbPath, err)
+	// Only applies when using SQLite and the effective URL points to data/usage.db.
+	if dbDriver == "sqlite" && url == filepath.Join(dataDir, "usage.db") {
+		legacyPath := filepath.Join(filepath.Dir(configPath), "usage.db")
+		if _, err := os.Stat(legacyPath); err == nil {
+			if _, err := os.Stat(url); os.IsNotExist(err) {
+				if err := os.Rename(legacyPath, url); err != nil {
+					log.Warnf("usage: failed to migrate %s → %s: %v", legacyPath, url, err)
 				} else {
-					log.Infof("usage: migrated database from %s → %s", oldPath, dbPath)
-					// Also move WAL and SHM files if they exist.
+					log.Infof("usage: migrated database from %s → %s", legacyPath, url)
 					for _, suffix := range []string{"-wal", "-shm"} {
-						if err := os.Rename(oldPath+suffix, dbPath+suffix); err != nil && !os.IsNotExist(err) {
-							log.Warnf("usage: failed to migrate %s: %v", oldPath+suffix, err)
+						if err := os.Rename(legacyPath+suffix, url+suffix); err != nil && !os.IsNotExist(err) {
+							log.Warnf("usage: failed to migrate %s: %v", legacyPath+suffix, err)
 						}
 					}
 				}
@@ -53,8 +63,8 @@ func StartService(cfg *config.Config, configPath string, localPassword string) {
 		}
 	}
 
-	if err := usage.InitDB(dbPath, cfg.RequestLogStorage, loc); err != nil {
-		log.Errorf("usage: failed to initialize SQLite: %v", err)
+	if err := usage.InitDB(dbDriver, url, cfg.RequestLogStorage, loc); err != nil {
+		log.Errorf("usage: failed to initialize database: %v", err)
 	}
 	usage.MigrateAPIKeysFromConfig(cfg, configPath)
 	usage.MigrateAPIKeyPermissionProfilesFromYAML(configPath)
@@ -105,19 +115,27 @@ func StartServiceBackground(cfg *config.Config, configPath string, localPassword
 	loc := config.ApplyTimeZone(cfg.Timezone)
 	dataDir := filepath.Join(filepath.Dir(configPath), "data")
 	_ = os.MkdirAll(dataDir, 0755)
-	dbPath := filepath.Join(dataDir, "usage.db")
 
-	// Migrate legacy usage.db from config directory to data/ subdirectory.
-	if oldPath := filepath.Join(filepath.Dir(configPath), "usage.db"); oldPath != dbPath {
-		if _, err := os.Stat(oldPath); err == nil {
-			if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-				if err := os.Rename(oldPath, dbPath); err != nil {
-					log.Warnf("usage: failed to migrate %s → %s: %v", oldPath, dbPath, err)
+	url := cfg.Database.URL
+	if url == "" {
+		url = filepath.Join(dataDir, "usage.db")
+	}
+	dbDriver := cfg.Database.Driver
+	if dbDriver == "" {
+		dbDriver = "sqlite"
+	}
+
+	if dbDriver == "sqlite" && url == filepath.Join(dataDir, "usage.db") {
+		legacyPath := filepath.Join(filepath.Dir(configPath), "usage.db")
+		if _, err := os.Stat(legacyPath); err == nil {
+			if _, err := os.Stat(url); os.IsNotExist(err) {
+				if err := os.Rename(legacyPath, url); err != nil {
+					log.Warnf("usage: failed to migrate %s → %s: %v", legacyPath, url, err)
 				} else {
-					log.Infof("usage: migrated database from %s → %s", oldPath, dbPath)
+					log.Infof("usage: migrated database from %s → %s", legacyPath, url)
 					for _, suffix := range []string{"-wal", "-shm"} {
-						if err := os.Rename(oldPath+suffix, dbPath+suffix); err != nil && !os.IsNotExist(err) {
-							log.Warnf("usage: failed to migrate %s: %v", oldPath+suffix, err)
+						if err := os.Rename(legacyPath+suffix, url+suffix); err != nil && !os.IsNotExist(err) {
+							log.Warnf("usage: failed to migrate %s: %v", legacyPath+suffix, err)
 						}
 					}
 				}
@@ -125,8 +143,8 @@ func StartServiceBackground(cfg *config.Config, configPath string, localPassword
 		}
 	}
 
-	if err := usage.InitDB(dbPath, cfg.RequestLogStorage, loc); err != nil {
-		log.Errorf("usage: failed to initialize SQLite: %v", err)
+	if err := usage.InitDB(dbDriver, url, cfg.RequestLogStorage, loc); err != nil {
+		log.Errorf("usage: failed to initialize database: %v", err)
 	}
 	usage.MigrateAPIKeysFromConfig(cfg, configPath)
 	usage.MigrateAPIKeyPermissionProfilesFromYAML(configPath)

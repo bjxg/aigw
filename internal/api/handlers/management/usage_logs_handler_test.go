@@ -24,7 +24,7 @@ func TestGetUsageLogsResolvesLegacySourceChannelName(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(func() {
@@ -101,7 +101,7 @@ func TestGetUsageLogsKeepsStoredChannelNameWhenCurrentAuthNameDiffers(t *testing
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(func() {
@@ -201,7 +201,7 @@ func TestGetUsageLogs_EmptyDB_DoesNotReturnNullSlices(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(func() {
@@ -256,7 +256,7 @@ func TestGetLogContent_ReturnsRequestDetailsPart(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{
 		StoreContent:           true,
 		ContentRetentionDays:   30,
 		CleanupIntervalMinutes: 1440,
@@ -313,7 +313,7 @@ func TestGetPublicLogContent_RejectsRequestDetailsPart(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(func() {
@@ -346,7 +346,7 @@ func TestGetPublicUsageLogs_EmptyDB_DoesNotReturnNullModels(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(func() {
@@ -393,7 +393,7 @@ func TestGetPublicUsageLogs_AcceptsPOSTBody(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(func() {
@@ -441,7 +441,7 @@ func TestGetPublicUsageLogs_DoesNotReadAPIKeyFromQuery(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(func() {
@@ -478,7 +478,7 @@ func TestGetPublicUsageLogs_RejectsOversizedPOSTBody(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "usage.db")
-	if err := usage.InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := usage.InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(func() {

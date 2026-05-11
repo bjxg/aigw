@@ -24,7 +24,7 @@ func initTestUsageDB(t *testing.T, cfg config.RequestLogStorageConfig) {
 	t.Helper()
 	CloseDB()
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	if err := InitDB(dbPath, cfg, time.UTC); err != nil {
+	if err := InitDB("sqlite", dbPath, cfg, time.UTC); err != nil {
 		t.Fatalf("InitDB() error = %v", err)
 	}
 	stopRequestLogMaintenance()
@@ -35,7 +35,7 @@ func TestCutoffStartUTCAtUsesProjectTimezoneForDayBoundaries(t *testing.T) {
 	CloseDB()
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
 	loc := time.FixedZone("UTC+8", 8*3600)
-	if err := InitDB(dbPath, config.RequestLogStorageConfig{StoreContent: false}, loc); err != nil {
+	if err := InitDB("sqlite", dbPath, config.RequestLogStorageConfig{StoreContent: false}, loc); err != nil {
 		t.Fatalf("InitDB() error = %v", err)
 	}
 	stopRequestLogMaintenance()
@@ -60,7 +60,7 @@ func TestQueryDailyCallsByAuthIndexesBucketsByProjectTimezone(t *testing.T) {
 	CloseDB()
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
 	loc := time.FixedZone("UTC+14", 14*3600)
-	if err := InitDB(dbPath, config.RequestLogStorageConfig{StoreContent: false}, loc); err != nil {
+	if err := InitDB("sqlite", dbPath, config.RequestLogStorageConfig{StoreContent: false}, loc); err != nil {
 		t.Fatalf("InitDB() error = %v", err)
 	}
 	stopRequestLogMaintenance()
@@ -227,7 +227,7 @@ func TestInitDBMigratesFirstTokenColumn(t *testing.T) {
 		t.Fatalf("close legacy db: %v", err)
 	}
 
-	if err := InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+	if err := InitDB("sqlite", dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
 		t.Fatalf("InitDB() error = %v", err)
 	}
 	stopRequestLogMaintenance()
