@@ -1,6 +1,9 @@
 # Binaries
 cli-proxy-api
+CLIProxyAPI
 aigw
+aigw-server
+
 server
 *.exe
 

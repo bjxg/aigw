@@ -40,12 +40,12 @@ func (RequestLog) TableName() string { return "request_logs" }
 
 // RequestLogContent maps to the request_log_content table.
 type RequestLogContent struct {
-	LogID         int64  `gorm:"primaryKey" json:"log_id"`
+	LogID         int64     `gorm:"primaryKey" json:"log_id"`
 	Timestamp     time.Time `gorm:"index:idx_log_content_timestamp;not null" json:"timestamp"`
-	Compression   string `gorm:"not null;default:'zstd'" json:"compression"`
-	InputContent  []byte `gorm:"type:blob;not null;default:''" json:"input_content"`
-	OutputContent []byte `gorm:"type:blob;not null;default:''" json:"output_content"`
-	DetailContent []byte `gorm:"type:blob;not null;default:''" json:"detail_content"`
+	Compression   string    `gorm:"not null;default:'zstd'" json:"compression"`
+	InputContent  []byte    `gorm:"type:bytea" json:"input_content"`
+	OutputContent []byte    `gorm:"type:bytea" json:"output_content"`
+	DetailContent []byte    `gorm:"type:bytea" json:"detail_content"`
 }
 
 // TableName overrides the table name.
