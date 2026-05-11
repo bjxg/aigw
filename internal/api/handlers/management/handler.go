@@ -351,8 +351,13 @@ func (h *Handler) persistRuntimeSetting(c *gin.Context, key string, value any) b
 	if strings.TrimSpace(h.configFilePath) != "" {
 		usage.CleanDBBackedConfigFromYAML(h.configFilePath)
 	}
+	// Reload runtime settings from DB so h.cfg reflects the latest state
+	usage.ApplyStoredRuntimeSettings(h.cfg)
 	if h != nil && h.authManager != nil {
 		h.authManager.SetConfig(h.cfg)
+	}
+	if h.onConfigChanged != nil {
+		h.onConfigChanged(h.cfg)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	return true
