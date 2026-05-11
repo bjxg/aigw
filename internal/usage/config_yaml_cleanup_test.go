@@ -1,52 +1,32 @@
 package usage
 
 import (
-	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"gopkg.in/yaml.v3"
-	_ "modernc.org/sqlite"
 )
 
 func setupConfigMigrationTestDB(t *testing.T) func() {
 	t.Helper()
 
+	CloseDB()
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+	if err := InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+		t.Fatalf("InitDB() error = %v", err)
 	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-
-	if _, err := db.Exec(createTableSQL); err != nil {
-		_ = db.Close()
-		t.Fatalf("create request_logs table: %v", err)
-	}
-	initAPIKeysTable(db)
-	initAPIKeyPermissionProfilesTable(db)
-	initRoutingConfigTable(db)
-	initProxyPoolTable(db)
-	initRuntimeSettingsTable(db)
-
-	usageDBMu.Lock()
-	usageDB = db
-	usageDBPath = dbPath
-	usageDBMu.Unlock()
+	stopRequestLogMaintenance()
 
 	return func() {
-		usageDBMu.Lock()
-		if usageDB != nil {
-			_ = usageDB.Close()
-			usageDB = nil
-		}
-		usageDBPath = ""
-		usageDBMu.Unlock()
+		CloseDB()
+		os.Remove(dbPath)
+		os.Remove(dbPath + "-wal")
+		os.Remove(dbPath + "-shm")
 	}
 }
 
@@ -86,10 +66,7 @@ func TestMigrateRoutingConfigFromConfigCleansYAML(t *testing.T) {
 }
 
 func TestMigrateRoutingConfigFromConfigKeepsYAMLWhenDBUnavailable(t *testing.T) {
-	usageDBMu.Lock()
-	usageDB = nil
-	usageDBPath = ""
-	usageDBMu.Unlock()
+	CloseDB()
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(configPath, []byte("routing:\n  strategy: round-robin\n"), 0o600); err != nil {

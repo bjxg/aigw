@@ -45,7 +45,7 @@ var dbBackedConfigYAMLKeys = map[string]bool{
 // config sections is ready. Callers must not remove YAML fallbacks when this is
 // false.
 func ConfigStoreAvailable() bool {
-	return getDB() != nil
+	return getGormDB() != nil
 }
 
 // CleanDBBackedConfigFromYAML removes config sections now owned by SQLite from

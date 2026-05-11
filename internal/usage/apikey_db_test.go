@@ -98,9 +98,7 @@ func TestAPIKeyNameBackfill(t *testing.T) {
 	cleanup := setupTestDB(t)
 	defer cleanup()
 
-	usageDBMu.Lock()
-	db := usageDB
-	usageDBMu.Unlock()
+	db := getSQLDB()
 	if db == nil {
 		t.Fatal("expected test db")
 	}
@@ -113,12 +111,7 @@ func TestAPIKeyNameBackfill(t *testing.T) {
 		t.Fatalf("insert unnamed key: %v", err)
 	}
 
-	// Use GORM backfill if available, otherwise raw SQL
-	if getGormDB() != nil {
-		GormBackfillAPIKeyNames()
-	} else {
-		backfillAPIKeyNames(db)
-	}
+	GormBackfillAPIKeyNames()
 
 	got := GetAPIKey("sk-user-d9c1c123dsx89107612398sdedb20b5")
 	if got == nil {

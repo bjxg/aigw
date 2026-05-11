@@ -224,19 +224,6 @@ func (r *gormLogRepo) QueryContent(ctx context.Context, id int64) (LogContentRes
 		return result, nil
 	}
 
-	// Fallback: use the raw *sql.DB for queries involving BLOB content
-	// that was written by non-GORM code (e.g. migrateLegacyContentBatch).
-	// GORM's connection may not see uncommitted data from the same *sql.DB.
-	sqlDB := getDB()
-	if sqlDB != nil {
-		return queryCompressedLogContent(sqlDB,
-			`SELECT logs.id, logs.model, content.compression, content.input_content, content.output_content
-			 FROM request_logs logs
-			 JOIN request_log_content content ON content.log_id = logs.id
-			 WHERE logs.id = ?`, id,
-		)
-	}
-
 	return LogContentResult{}, fmt.Errorf("usage: query log content: not found (id=%d)", id)
 }
 
@@ -280,17 +267,6 @@ func (r *gormLogRepo) QueryContentPart(ctx context.Context, id int64, part strin
 		}, nil
 	}
 
-	// Fallback: use raw *sql.DB for BLOB content written by non-GORM code
-	sqlDB := getDB()
-	if sqlDB != nil {
-		return queryCompressedLogContentPart(sqlDB, part,
-			fmt.Sprintf(`SELECT logs.id, logs.model, content.compression, content.%s
-			 FROM request_logs logs
-			 JOIN request_log_content content ON content.log_id = logs.id
-			 WHERE logs.id = ?`, column), id,
-		)
-	}
-
 	if part == "details" {
 		var reqLog RequestLog
 		if err := r.db.WithContext(ctx).Select("id, model").First(&reqLog, id).Error; err != nil {
@@ -329,18 +305,7 @@ func (r *gormLogRepo) QueryContentForKey(ctx context.Context, id int64, apiKeyID
 		return result, nil
 	}
 
-	// Fallback: use raw *sql.DB for BLOB content written by non-GORM code
-	sqlDB := getDB()
-	if sqlDB != nil {
-		return queryCompressedLogContent(sqlDB,
-			`SELECT logs.id, logs.model, content.compression, content.input_content, content.output_content
-			 FROM request_logs logs
-			 JOIN request_log_content content ON content.log_id = logs.id
-			 WHERE logs.id = ? AND logs.api_key_id = ?`, id, apiKeyID,
-		)
-	}
-
-	return LogContentResult{}, fmt.Errorf("usage: query log content: not found (id=%d)", id)
+	return LogContentResult{}, fmt.Errorf("usage: query log content: not found (id=%d, api_key_id=%d)", id, apiKeyID)
 }
 
 // --- QueryContentPartForKey ---
@@ -383,17 +348,6 @@ func (r *gormLogRepo) QueryContentPartForKey(ctx context.Context, id int64, apiK
 	}
 
 	// Fallback: legacy inline content
-	// Fallback: use raw *sql.DB for BLOB content written by non-GORM code
-	sqlDB := getDB()
-	if sqlDB != nil {
-		return queryCompressedLogContentPart(sqlDB, part,
-			fmt.Sprintf(`SELECT logs.id, logs.model, content.compression, content.%s
-			 FROM request_logs logs
-			 JOIN request_log_content content ON content.log_id = logs.id
-			 WHERE logs.id = ? AND logs.api_key_id = ?`, column), id, apiKeyID,
-		)
-	}
-
 	if part == "details" {
 		var reqLog RequestLog
 		if err := r.db.WithContext(ctx).Select("id, model").Where("id = ? AND api_key_id = ?", id, apiKeyID).First(&reqLog).Error; err != nil {

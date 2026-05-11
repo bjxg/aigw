@@ -2,7 +2,6 @@ package usage
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -149,63 +148,11 @@ func SyncOpenRouterModelList(ctx context.Context, models []OpenRouterRemoteModel
 }
 
 func GetOpenRouterModelSyncState() OpenRouterModelSyncState {
-	if getGormDB() != nil {
-		return GormGetOpenRouterModelSyncState()
-	}
-	db := getDB()
-	state := OpenRouterModelSyncState{
-		IntervalMinutes: defaultOpenRouterModelSyncIntervalMinutes,
-		Running:         openRouterSyncRunning.Load(),
-	}
-	if db == nil {
-		return state
-	}
-	ensureOpenRouterModelSyncStateRow()
-	var enabled int
-	if err := db.QueryRow(
-		`SELECT enabled, interval_minutes, last_sync_at, last_success_at, last_error, last_seen, last_added, last_updated, last_skipped, updated_at
-		 FROM model_openrouter_sync_state WHERE id = 1`,
-	).Scan(
-		&enabled,
-		&state.IntervalMinutes,
-		&state.LastSyncAt,
-		&state.LastSuccessAt,
-		&state.LastError,
-		&state.LastSeen,
-		&state.LastAdded,
-		&state.LastUpdated,
-		&state.LastSkipped,
-		&state.UpdatedAt,
-	); err != nil {
-		return state
-	}
-	state.Enabled = intToBool(enabled)
-	state.IntervalMinutes = normalizeOpenRouterModelSyncInterval(state.IntervalMinutes)
-	state.Running = openRouterSyncRunning.Load()
-	return state
+	return GormGetOpenRouterModelSyncState()
 }
 
 func UpdateOpenRouterModelSyncSettings(enabled bool, intervalMinutes int) (OpenRouterModelSyncState, error) {
-	if getGormDB() != nil {
-		return GormUpdateOpenRouterModelSyncSettings(enabled, intervalMinutes)
-	}
-	db := getDB()
-	if db == nil {
-		return OpenRouterModelSyncState{}, fmt.Errorf("usage: database not initialised")
-	}
-	ensureOpenRouterModelSyncStateRow()
-	_, err := db.Exec(
-		`UPDATE model_openrouter_sync_state
-		 SET enabled = ?, interval_minutes = ?, updated_at = ?
-		 WHERE id = 1`,
-		boolToInt(enabled),
-		normalizeOpenRouterModelSyncInterval(intervalMinutes),
-		nowRFC3339(),
-	)
-	if err != nil {
-		return OpenRouterModelSyncState{}, fmt.Errorf("usage: update openrouter sync settings: %w", err)
-	}
-	return GetOpenRouterModelSyncState(), nil
+	return GormUpdateOpenRouterModelSyncSettings(enabled, intervalMinutes)
 }
 
 func RunOpenRouterModelSync(ctx context.Context) (OpenRouterModelSyncResult, OpenRouterModelSyncState, error) {
@@ -300,89 +247,11 @@ func fetchOpenRouterModels(ctx context.Context) ([]OpenRouterRemoteModel, error)
 }
 
 func ensureOpenRouterModelSyncStateRow() {
-	if getGormDB() != nil {
-		GormEnsureOpenRouterModelSyncStateRow()
-		return
-	}
-	db := getDB()
-	if db == nil {
-		return
-	}
-	ensureOpenRouterModelSyncStateSchema(db)
-	_, _ = db.Exec(
-		`INSERT OR IGNORE INTO model_openrouter_sync_state
-		 (id, enabled, interval_minutes, last_sync_at, last_success_at, last_error, last_seen, last_added, last_updated, last_skipped, updated_at)
-		 VALUES (1, 0, ?, '', '', '', 0, 0, 0, 0, ?)`,
-		defaultOpenRouterModelSyncIntervalMinutes,
-		nowRFC3339(),
-	)
-}
-
-func ensureOpenRouterModelSyncStateSchema(db *sql.DB) {
-	if db == nil || sqliteColumnExists(db, "model_openrouter_sync_state", "last_updated") {
-		return
-	}
-	if _, err := db.Exec("ALTER TABLE model_openrouter_sync_state ADD COLUMN last_updated INTEGER NOT NULL DEFAULT 0"); err != nil {
-		log.Warnf("usage: add openrouter sync last_updated column: %v", err)
-	}
-}
-
-func sqliteColumnExists(db *sql.DB, tableName, columnName string) bool {
-	rows, err := db.Query("PRAGMA table_info(" + tableName + ")")
-	if err != nil {
-		return false
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var cid int
-		var name string
-		var columnType string
-		var notNull int
-		var defaultValue sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
-			continue
-		}
-		if name == columnName {
-			return true
-		}
-	}
-	return false
+	GormEnsureOpenRouterModelSyncStateRow()
 }
 
 func recordOpenRouterModelSyncResult(result OpenRouterModelSyncResult, syncErr error) OpenRouterModelSyncState {
-	if getGormDB() != nil {
-		return GormRecordOpenRouterModelSyncResult(result, syncErr)
-	}
-	db := getDB()
-	if db == nil {
-		return GetOpenRouterModelSyncState()
-	}
-	ensureOpenRouterModelSyncStateRow()
-	now := nowRFC3339()
-	state := GetOpenRouterModelSyncState()
-	lastSuccessAt := state.LastSuccessAt
-	lastError := ""
-	if syncErr != nil {
-		lastError = syncErr.Error()
-	} else {
-		lastSuccessAt = now
-	}
-	_, _ = db.Exec(
-		`UPDATE model_openrouter_sync_state
-		 SET last_sync_at = ?, last_success_at = ?, last_error = ?, last_seen = ?, last_added = ?, last_updated = ?, last_skipped = ?, updated_at = ?
-		 WHERE id = 1`,
-		now,
-		lastSuccessAt,
-		lastError,
-		result.Seen,
-		result.Added,
-		result.Updated,
-		result.Skipped,
-		now,
-	)
-	return GetOpenRouterModelSyncState()
+	return GormRecordOpenRouterModelSyncResult(result, syncErr)
 }
 
 func normalizeOpenRouterModelSyncInterval(minutes int) int {

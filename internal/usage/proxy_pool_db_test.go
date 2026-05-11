@@ -1,46 +1,30 @@
 package usage
 
 import (
-	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
-	_ "modernc.org/sqlite"
 )
 
 func setupProxyPoolTestDB(t *testing.T) func() {
 	t.Helper()
 
+	CloseDB()
 	dbPath := filepath.Join(t.TempDir(), "usage.db")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+	if err := InitDB(dbPath, config.RequestLogStorageConfig{}, time.UTC); err != nil {
+		t.Fatalf("InitDB() error = %v", err)
 	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-
-	if _, err := db.Exec(createTableSQL); err != nil {
-		_ = db.Close()
-		t.Fatalf("create request_logs table: %v", err)
-	}
-	initProxyPoolTable(db)
-
-	usageDBMu.Lock()
-	usageDB = db
-	usageDBPath = dbPath
-	usageDBMu.Unlock()
+	stopRequestLogMaintenance()
 
 	return func() {
-		usageDBMu.Lock()
-		if usageDB != nil {
-			_ = usageDB.Close()
-			usageDB = nil
-		}
-		usageDBPath = ""
-		usageDBMu.Unlock()
+		CloseDB()
+		os.Remove(dbPath)
+		os.Remove(dbPath + "-wal")
+		os.Remove(dbPath + "-shm")
 	}
 }
 

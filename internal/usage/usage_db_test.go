@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
+	_ "modernc.org/sqlite"
 )
 
 func makePseudoRandomText(size int) string {
@@ -232,7 +233,7 @@ func TestInitDBMigratesFirstTokenColumn(t *testing.T) {
 	stopRequestLogMaintenance()
 	t.Cleanup(CloseDB)
 
-	db := getDB()
+	db := getSQLDB()
 	var found bool
 	rows, err := db.Query("PRAGMA table_info(request_logs)")
 	if err != nil {
@@ -300,9 +301,9 @@ func TestInsertLogStoresCompressedContentOutsideMainTable(t *testing.T) {
 		t.Fatalf("OutputContent = %q, want %q", content.OutputContent, output)
 	}
 
-	db := getDB()
+	sqlDB := getSQLDB()
 	var legacyInput, legacyOutput string
-	if err := db.QueryRow(
+	if err := sqlDB.QueryRow(
 		"SELECT input_content, output_content FROM request_logs WHERE id = ?",
 		result.Items[0].ID,
 	).Scan(&legacyInput, &legacyOutput); err != nil {
@@ -313,7 +314,7 @@ func TestInsertLogStoresCompressedContentOutsideMainTable(t *testing.T) {
 	}
 
 	var compressedInput, compressedOutput []byte
-	if err := db.QueryRow(
+	if err := sqlDB.QueryRow(
 		"SELECT input_content, output_content FROM request_log_content WHERE log_id = ?",
 		result.Items[0].ID,
 	).Scan(&compressedInput, &compressedOutput); err != nil {
@@ -321,64 +322,6 @@ func TestInsertLogStoresCompressedContentOutsideMainTable(t *testing.T) {
 	}
 	if len(compressedInput) == 0 || len(compressedOutput) == 0 {
 		t.Fatalf("expected compressed content blobs to be present")
-	}
-}
-
-func TestMigrateLegacyContentBatchMovesContentOutOfMainTable(t *testing.T) {
-	initTestUsageDB(t, config.RequestLogStorageConfig{
-		StoreContent:           true,
-		ContentRetentionDays:   30,
-		CleanupIntervalMinutes: 1440,
-	})
-
-	db := getDB()
-	timestamp := time.Now().UTC()
-	input := "legacy-input"
-	output := "legacy-output"
-
-	result, err := db.Exec(
-		`INSERT INTO request_logs
-			(timestamp, api_key_id, model, source, channel_name, auth_index,
-			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens,
-			 cost, input_content, output_content)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		timestamp.Format(time.RFC3339Nano),
-		0, "legacy-model", "legacy-source", "legacy-channel", "auth-legacy",
-		0, 10, 1, 2, 0, 0, 3, 0, input, output,
-	)
-	if err != nil {
-		t.Fatalf("insert legacy row: %v", err)
-	}
-	logID, err := result.LastInsertId()
-	if err != nil {
-		t.Fatalf("LastInsertId() error = %v", err)
-	}
-
-	migrated, err := migrateLegacyContentBatch(db, 100)
-	if err != nil {
-		t.Fatalf("migrateLegacyContentBatch() error = %v", err)
-	}
-	if migrated != 1 {
-		t.Fatalf("migrated = %d, want 1", migrated)
-	}
-
-	content, err := QueryLogContent(logID)
-	if err != nil {
-		t.Fatalf("QueryLogContent() error = %v", err)
-	}
-	if content.InputContent != input || content.OutputContent != output {
-		t.Fatalf("unexpected migrated content: %+v", content)
-	}
-
-	var legacyInput, legacyOutput string
-	if err := db.QueryRow(
-		"SELECT input_content, output_content FROM request_logs WHERE id = ?",
-		logID,
-	).Scan(&legacyInput, &legacyOutput); err != nil {
-		t.Fatalf("query cleared legacy columns: %v", err)
-	}
-	if legacyInput != "" || legacyOutput != "" {
-		t.Fatalf("expected legacy columns cleared after migration, got input=%q output=%q", legacyInput, legacyOutput)
 	}
 }
 
@@ -390,9 +333,9 @@ func TestCleanupExpiredLogContentKeepsMetadataRows(t *testing.T) {
 		VacuumOnCleanup:        false,
 	})
 
-	db := getDB()
+	sqlDB := getSQLDB()
 	timestamp := time.Now().UTC().AddDate(0, 0, -40)
-	result, err := db.Exec(
+	result, err := sqlDB.Exec(
 		`INSERT INTO request_logs
 			(timestamp, api_key_id, model, source, channel_name, auth_index,
 			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
@@ -409,24 +352,33 @@ func TestCleanupExpiredLogContentKeepsMetadataRows(t *testing.T) {
 		t.Fatalf("LastInsertId() error = %v", err)
 	}
 
-	tx, err := db.Begin()
+	inputCompressed, err := compressLogContent("expired-input")
 	if err != nil {
-		t.Fatalf("Begin() error = %v", err)
+		t.Fatalf("compressLogContent(input) error = %v", err)
 	}
-	if err := insertLogContentTx(tx, logID, timestamp, "expired-input", "expired-output", ""); err != nil {
-		t.Fatalf("insertLogContentTx() error = %v", err)
+	outputCompressed, err := compressLogContent("expired-output")
+	if err != nil {
+		t.Fatalf("compressLogContent(output) error = %v", err)
 	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("Commit() error = %v", err)
+	if _, err := sqlDB.Exec(
+		`INSERT INTO request_log_content (log_id, timestamp, compression, input_content, output_content)
+		 VALUES (?, ?, ?, ?, ?)`,
+		logID,
+		timestamp.Format(time.RFC3339Nano),
+		requestLogContentCompression,
+		inputCompressed,
+		outputCompressed,
+	); err != nil {
+		t.Fatalf("insert request_log_content row: %v", err)
 	}
 
-	_, err = cleanupExpiredLogContent(db)
+	_, err = cleanupExpiredLogContent(getGormDB())
 	if err != nil {
 		t.Fatalf("cleanupExpiredLogContent() error = %v", err)
 	}
 
 	var metadataRows int
-	if err := db.QueryRow("SELECT COUNT(*) FROM request_logs WHERE id = ?", logID).Scan(&metadataRows); err != nil {
+	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM request_logs WHERE id = ?", logID).Scan(&metadataRows); err != nil {
 		t.Fatalf("count metadata rows: %v", err)
 	}
 	if metadataRows != 1 {
@@ -434,7 +386,7 @@ func TestCleanupExpiredLogContentKeepsMetadataRows(t *testing.T) {
 	}
 
 	var contentRows int
-	if err := db.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID).Scan(&contentRows); err != nil {
+	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID).Scan(&contentRows); err != nil {
 		t.Fatalf("count content rows: %v", err)
 	}
 	if contentRows != 0 {
@@ -459,9 +411,9 @@ func TestGetRequestLogStorageBytesCountsCompressedAndLegacyContent(t *testing.T)
 		TotalTokens:  30,
 	}, input, output)
 
-	db := getDB()
+	sqlDB := getSQLDB()
 	var compressedInputBytes, compressedOutputBytes int64
-	if err := db.QueryRow(
+	if err := sqlDB.QueryRow(
 		`SELECT length(input_content), length(output_content)
 		 FROM request_log_content
 		 ORDER BY log_id DESC
@@ -472,7 +424,7 @@ func TestGetRequestLogStorageBytesCountsCompressedAndLegacyContent(t *testing.T)
 
 	legacyInput := "legacy-inline-input"
 	legacyOutput := "legacy-inline-output"
-	if _, err := db.Exec(
+	if _, err := sqlDB.Exec(
 		`INSERT INTO request_logs
 			(timestamp, api_key_id, model, source, channel_name, auth_index,
 			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens,
@@ -493,105 +445,6 @@ func TestGetRequestLogStorageBytesCountsCompressedAndLegacyContent(t *testing.T)
 	want := compressedInputBytes + compressedOutputBytes + int64(len(legacyInput)+len(legacyOutput))
 	if totalBytes != want {
 		t.Fatalf("GetRequestLogStorageBytes() = %d, want %d", totalBytes, want)
-	}
-}
-
-func TestMigrateLegacyContentBatchKeepsAllContentWhenRetentionUnlimited(t *testing.T) {
-	initTestUsageDB(t, config.RequestLogStorageConfig{
-		StoreContent:           true,
-		ContentRetentionDays:   0,
-		CleanupIntervalMinutes: 1440,
-		VacuumOnCleanup:        false,
-	})
-
-	db := getDB()
-	timestamp := time.Now().UTC().AddDate(0, 0, -90)
-	input := "legacy-unlimited-input"
-	output := "legacy-unlimited-output"
-
-	result, err := db.Exec(
-		`INSERT INTO request_logs
-			(timestamp, api_key_id, model, source, channel_name, auth_index,
-			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens,
-			 cost, input_content, output_content)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		timestamp.Format(time.RFC3339Nano),
-		0, "legacy-model", "legacy-source", "legacy-channel", "auth-legacy",
-		0, 10, 1, 2, 0, 0, 3, 0, input, output,
-	)
-	if err != nil {
-		t.Fatalf("insert legacy row: %v", err)
-	}
-	logID, err := result.LastInsertId()
-	if err != nil {
-		t.Fatalf("LastInsertId() error = %v", err)
-	}
-
-	migrated, err := migrateLegacyContentBatch(db, 100)
-	if err != nil {
-		t.Fatalf("migrateLegacyContentBatch() error = %v", err)
-	}
-	if migrated != 1 {
-		t.Fatalf("migrated = %d, want 1", migrated)
-	}
-
-	content, err := QueryLogContent(logID)
-	if err != nil {
-		t.Fatalf("QueryLogContent() error = %v", err)
-	}
-	if content.InputContent != input || content.OutputContent != output {
-		t.Fatalf("unexpected migrated content: %+v", content)
-	}
-}
-
-func TestMigrateLegacyContentBatchPreservesInlineContentWhenStorageDisabled(t *testing.T) {
-	// After removing RequestLogStorageConfig, content is always migrated.
-	// This test now verifies that content is migrated regardless of the StoreContent setting.
-	initTestUsageDB(t, config.RequestLogStorageConfig{
-		StoreContent:           false,
-		ContentRetentionDays:   30,
-		CleanupIntervalMinutes: 1440,
-		VacuumOnCleanup:        false,
-	})
-
-	db := getDB()
-	timestamp := time.Now().UTC()
-	input := "legacy-inline-input"
-	output := "legacy-inline-output"
-
-	result, err := db.Exec(
-		`INSERT INTO request_logs
-			(timestamp, api_key_id, model, source, channel_name, auth_index,
-			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens,
-			 cost, input_content, output_content)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		timestamp.Format(time.RFC3339Nano),
-		0, "inline-model", "inline-source", "inline-channel", "auth-inline",
-		0, 10, 1, 2, 0, 0, 3, 0, input, output,
-	)
-	if err != nil {
-		t.Fatalf("insert legacy row: %v", err)
-	}
-	logID, err := result.LastInsertId()
-	if err != nil {
-		t.Fatalf("LastInsertId() error = %v", err)
-	}
-
-	migrated, err := migrateLegacyContentBatch(db, 100)
-	if err != nil {
-		t.Fatalf("migrateLegacyContentBatch() error = %v", err)
-	}
-	if migrated != 1 {
-		t.Fatalf("migrated = %d, want 1 (content is now always migrated)", migrated)
-	}
-
-	// Content should now be in request_log_content, not in inline columns
-	content, err := QueryLogContent(logID)
-	if err != nil {
-		t.Fatalf("QueryLogContent() error = %v", err)
-	}
-	if content.InputContent != input || content.OutputContent != output {
-		t.Fatalf("unexpected migrated content: input=%q output=%q", content.InputContent, content.OutputContent)
 	}
 }
 
@@ -620,9 +473,9 @@ func TestCleanupExpiredLogContentSkipsWhenStorageDisabledOrRetentionUnlimited(t 
 		t.Run(tc.name, func(t *testing.T) {
 			initTestUsageDB(t, tc.cfg)
 
-			db := getDB()
+			sqlDB := getSQLDB()
 			timestamp := time.Now().UTC().AddDate(0, 0, -40)
-			result, err := db.Exec(
+			result, err := sqlDB.Exec(
 				`INSERT INTO request_logs
 					(timestamp, api_key_id, model, source, channel_name, auth_index,
 					 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
@@ -647,7 +500,7 @@ func TestCleanupExpiredLogContentSkipsWhenStorageDisabledOrRetentionUnlimited(t 
 			if err != nil {
 				t.Fatalf("compressLogContent(output) error = %v", err)
 			}
-			if _, err := db.Exec(
+			if _, err := sqlDB.Exec(
 				`INSERT INTO request_log_content (log_id, timestamp, compression, input_content, output_content)
 				 VALUES (?, ?, ?, ?, ?)`,
 				logID,
@@ -659,7 +512,7 @@ func TestCleanupExpiredLogContentSkipsWhenStorageDisabledOrRetentionUnlimited(t 
 				t.Fatalf("insert request_log_content row: %v", err)
 			}
 
-			deleted, err := cleanupExpiredLogContent(db)
+			deleted, err := cleanupExpiredLogContent(getGormDB())
 			if err != nil {
 				t.Fatalf("cleanupExpiredLogContent() error = %v", err)
 			}
@@ -669,7 +522,7 @@ func TestCleanupExpiredLogContentSkipsWhenStorageDisabledOrRetentionUnlimited(t 
 					t.Fatalf("deleted = %d, want 0 (cleanup should be skipped)", deleted)
 				}
 				var contentRows int
-				if err := db.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID).Scan(&contentRows); err != nil {
+				if err := sqlDB.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID).Scan(&contentRows); err != nil {
 					t.Fatalf("count content rows: %v", err)
 				}
 				if contentRows != 1 {
@@ -689,7 +542,7 @@ func TestCleanupOversizedLogContentPrunesOldestRows(t *testing.T) {
 		VacuumOnCleanup:        false,
 	})
 
-	db := getDB()
+	sqlDB := getSQLDB()
 	maxBytes := int64(1024 * 1024)
 	payload := makePseudoRandomText(420 * 1024)
 	compressed, err := compressLogContent(payload)
@@ -706,7 +559,7 @@ func TestCleanupOversizedLogContentPrunesOldestRows(t *testing.T) {
 
 	insertRawContentRow := func(ts time.Time, apiKeyID int64) int64 {
 		t.Helper()
-		result, err := db.Exec(
+		result, err := sqlDB.Exec(
 			`INSERT INTO request_logs
 				(timestamp, api_key_id, model, source, channel_name, auth_index,
 				 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
@@ -722,7 +575,7 @@ func TestCleanupOversizedLogContentPrunesOldestRows(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LastInsertId() error = %v", err)
 		}
-		if _, err := db.Exec(
+		if _, err := sqlDB.Exec(
 			`INSERT INTO request_log_content (log_id, timestamp, compression, input_content, output_content)
 			 VALUES (?, ?, ?, ?, ?)`,
 			logID,
@@ -740,7 +593,7 @@ func TestCleanupOversizedLogContentPrunesOldestRows(t *testing.T) {
 	_ = insertRawContentRow(time.Now().UTC().Add(-2*time.Hour), 1)
 	newestID := insertRawContentRow(time.Now().UTC().Add(-1*time.Hour), 1)
 
-	deleted, err := cleanupOversizedLogContent(db, maxBytes)
+	deleted, err := cleanupOversizedLogContent(getGormDB(), maxBytes)
 	if err != nil {
 		t.Fatalf("cleanupOversizedLogContent() error = %v", err)
 	}
@@ -748,7 +601,7 @@ func TestCleanupOversizedLogContentPrunesOldestRows(t *testing.T) {
 		t.Fatalf("expected oversized cleanup to delete at least one row")
 	}
 
-	totalBytes, err := queryStoredContentBytes(db)
+	totalBytes, err := queryStoredContentBytes(getGormDB())
 	if err != nil {
 		t.Fatalf("queryStoredContentBytes() error = %v", err)
 	}
@@ -757,7 +610,7 @@ func TestCleanupOversizedLogContentPrunesOldestRows(t *testing.T) {
 	}
 
 	var oldestRows int
-	if err := db.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", oldestID).Scan(&oldestRows); err != nil {
+	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", oldestID).Scan(&oldestRows); err != nil {
 		t.Fatalf("count oldest row: %v", err)
 	}
 	if oldestRows != 0 {
@@ -765,7 +618,7 @@ func TestCleanupOversizedLogContentPrunesOldestRows(t *testing.T) {
 	}
 
 	var newestRows int
-	if err := db.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", newestID).Scan(&newestRows); err != nil {
+	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", newestID).Scan(&newestRows); err != nil {
 		t.Fatalf("count newest row: %v", err)
 	}
 	if newestRows != 1 {
@@ -784,10 +637,10 @@ func TestInsertLogContentTxSkipsSingleRowLargerThanSizeCap(t *testing.T) {
 		VacuumOnCleanup:        false,
 	})
 
-	db := getDB()
+	sqlDB := getSQLDB()
 	payload := makePseudoRandomText(2 * 1024 * 1024)
 
-	result, err := db.Exec(
+	result, err := sqlDB.Exec(
 		`INSERT INTO request_logs
 			(timestamp, api_key_id, model, source, channel_name, auth_index,
 			 failed, latency_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
@@ -810,7 +663,7 @@ func TestInsertLogContentTxSkipsSingleRowLargerThanSizeCap(t *testing.T) {
 
 	// Verify content was stored (previously, content exceeding MaxTotalSizeMB was skipped)
 	var contentRows int
-	if err := db.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID+1).Scan(&contentRows); err != nil {
+	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM request_log_content WHERE log_id = ?", logID+1).Scan(&contentRows); err != nil {
 		t.Fatalf("count content rows: %v", err)
 	}
 	if contentRows < 1 {
@@ -884,9 +737,9 @@ func TestDeleteLogsByAPIKeyRemovesLogsAndContent(t *testing.T) {
 	}
 
 	// Verify content rows are also deleted for target key
-	db := getDB()
+	sqlDB := getSQLDB()
 	var contentCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM request_log_content").Scan(&contentCount)
+	err = sqlDB.QueryRow("SELECT COUNT(*) FROM request_log_content").Scan(&contentCount)
 	if err != nil {
 		t.Fatalf("count content rows: %v", err)
 	}

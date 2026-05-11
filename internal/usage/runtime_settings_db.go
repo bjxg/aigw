@@ -1,10 +1,8 @@
 package usage
 
 import (
-	"database/sql"
 	"encoding/json"
 	"strings"
-	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	log "github.com/sirupsen/logrus"
@@ -23,23 +21,6 @@ const (
 	RuntimeSettingIdentityFingerprint  = "identity-fingerprint"
 	RuntimeSettingPayload              = "payload"
 )
-
-const createRuntimeSettingsTableSQL = `
-CREATE TABLE IF NOT EXISTS runtime_settings (
-  setting_key TEXT PRIMARY KEY NOT NULL,
-  payload     TEXT NOT NULL DEFAULT '{}',
-  updated_at  TEXT NOT NULL DEFAULT ''
-);
-`
-
-func initRuntimeSettingsTable(db *sql.DB) {
-	if db == nil {
-		return
-	}
-	if _, err := db.Exec(createRuntimeSettingsTableSQL); err != nil {
-		log.Errorf("usage: create runtime_settings table: %v", err)
-	}
-}
 
 type runtimeSettingSpec struct {
 	key        string
@@ -349,60 +330,15 @@ func payloadConfigMeaningful(payload config.PayloadConfig) bool {
 }
 
 func runtimeSettingPayload(key string) (json.RawMessage, bool) {
-	if getGormDB() != nil {
-		return GormRuntimeSettingPayload(key)
-	}
-	db := getDB()
-	if db == nil {
-		return nil, false
-	}
-	var payload string
-	if err := db.QueryRow(`SELECT payload FROM runtime_settings WHERE setting_key = ?`, key).Scan(&payload); err != nil {
-		if err != sql.ErrNoRows {
-			log.Warnf("usage: load runtime setting %s: %v", key, err)
-		}
-		return nil, false
-	}
-	payload = strings.TrimSpace(payload)
-	if payload == "" {
-		payload = "{}"
-	}
-	return json.RawMessage(payload), true
+	return GormRuntimeSettingPayload(key)
 }
 
 func runtimeSettingExists(key string) bool {
-	if getGormDB() != nil {
-		return GormRuntimeSettingExists(key)
-	}
-	_, ok := runtimeSettingPayload(key)
-	return ok
+	return GormRuntimeSettingExists(key)
 }
 
 func UpsertRuntimeSetting(key string, value any) error {
-	if getGormDB() != nil {
-		return GormUpsertRuntimeSetting(key, value)
-	}
-	db := getDB()
-	if db == nil {
-		return nil
-	}
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return nil
-	}
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	_, err = db.Exec(
-		`INSERT INTO runtime_settings (setting_key, payload, updated_at)
-		 VALUES (?, ?, ?)
-		 ON CONFLICT(setting_key) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
-		key,
-		string(payload),
-		time.Now().UTC().Format(time.RFC3339),
-	)
-	return err
+	return GormUpsertRuntimeSetting(key, value)
 }
 
 func PersistRuntimeSettingsFromConfig(cfg *config.Config) int {

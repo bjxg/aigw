@@ -1,18 +1,12 @@
 package usage
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/db"
-	log "github.com/sirupsen/logrus"
-	_ "modernc.org/sqlite"
 )
 
 // LogRow represents a single request log entry returned by QueryLogs.
@@ -100,329 +94,44 @@ type HourlyCountPoint struct {
 const systemRequestLogFilterValue = "__system__"
 
 var (
-	usageDB     *sql.DB
 	usageDBMu   sync.Mutex
 	usageDBPath string
 	usageLoc    *time.Location
 )
 
-const createTableSQL = `
-CREATE TABLE IF NOT EXISTS request_logs (
-  id               INTEGER PRIMARY KEY AUTOINCREMENT,
-  timestamp        DATETIME NOT NULL,
-  api_key_id       INTEGER NOT NULL DEFAULT 0,
-  api_key_name     TEXT NOT NULL DEFAULT '',
-  user_id          INTEGER DEFAULT NULL,
-  model            TEXT NOT NULL DEFAULT '',
-  source           TEXT NOT NULL DEFAULT '',
-  channel_name     TEXT NOT NULL DEFAULT '',
-  auth_index       TEXT NOT NULL DEFAULT '',
-  failed           INTEGER NOT NULL DEFAULT 0,
-  latency_ms       INTEGER NOT NULL DEFAULT 0,
-  first_token_ms   INTEGER NOT NULL DEFAULT 0,
-  input_tokens     INTEGER NOT NULL DEFAULT 0,
-  output_tokens    INTEGER NOT NULL DEFAULT 0,
-  reasoning_tokens INTEGER NOT NULL DEFAULT 0,
-  cached_tokens    INTEGER NOT NULL DEFAULT 0,
-  total_tokens     INTEGER NOT NULL DEFAULT 0,
-  input_content    TEXT NOT NULL DEFAULT '',
-  output_content   TEXT NOT NULL DEFAULT ''
-);
-
-CREATE TABLE IF NOT EXISTS request_log_content (
-  log_id           INTEGER PRIMARY KEY,
-  timestamp        DATETIME NOT NULL,
-  compression      TEXT NOT NULL DEFAULT 'zstd',
-  input_content    BLOB NOT NULL DEFAULT X'',
-  output_content   BLOB NOT NULL DEFAULT X'',
-  detail_content   BLOB NOT NULL DEFAULT X'',
-  FOREIGN KEY(log_id) REFERENCES request_logs(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON request_logs(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_logs_api_key_id ON request_logs(api_key_id);
-CREATE INDEX IF NOT EXISTS idx_logs_model ON request_logs(model);
-CREATE INDEX IF NOT EXISTS idx_logs_failed ON request_logs(failed);
-CREATE INDEX IF NOT EXISTS idx_logs_auth_index ON request_logs(auth_index);
-CREATE INDEX IF NOT EXISTS idx_log_content_timestamp ON request_log_content(timestamp DESC);
-`
-
-// migrateContentColumns adds input_content/output_content columns to an
-// existing request_logs table that was created before this feature.
-func migrateContentColumns(db *sql.DB) {
-	for _, col := range []string{"input_content", "output_content"} {
-		_, err := db.Exec(fmt.Sprintf("ALTER TABLE request_logs ADD COLUMN %s TEXT NOT NULL DEFAULT ''", col))
-		if err != nil {
-			// "duplicate column name" is expected when already migrated
-			if !strings.Contains(err.Error(), "duplicate") {
-				log.Warnf("usage: migrate column %s: %v", col, err)
-			}
-		}
+// getSQLDB returns the underlying *sql.DB from the GORM instance.
+// This is useful for tests and for SQLite-specific maintenance operations.
+func getSQLDB() *sql.DB {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil
 	}
-}
-
-// migrateCostColumn adds cost column to an existing request_logs table.
-func migrateCostColumn(db *sql.DB) {
-	_, err := db.Exec("ALTER TABLE request_logs ADD COLUMN cost REAL NOT NULL DEFAULT 0")
+	sqlDB, err := gormDB.DB()
 	if err != nil {
-		if !strings.Contains(err.Error(), "duplicate") {
-			log.Warnf("usage: migrate column cost: %v", err)
-		}
+		return nil
 	}
+	return sqlDB
 }
 
-// migrateApiKeyNameColumn adds api_key_name column to an existing request_logs table.
-// This stores the display name of the API key at the time of the request, so that
-// the name is preserved even if the key is later deleted.
-func migrateApiKeyNameColumn(db *sql.DB) {
-	_, err := db.Exec("ALTER TABLE request_logs ADD COLUMN api_key_name TEXT NOT NULL DEFAULT ''")
-	if err != nil {
-		if !strings.Contains(err.Error(), "duplicate") {
-			log.Warnf("usage: migrate column api_key_name: %v", err)
-		}
-	}
-}
-
-// migrateFirstTokenColumn adds first_token_ms column to an existing request_logs table.
-func migrateFirstTokenColumn(db *sql.DB) {
-	_, err := db.Exec("ALTER TABLE request_logs ADD COLUMN first_token_ms INTEGER NOT NULL DEFAULT 0")
-	if err != nil {
-		if !strings.Contains(err.Error(), "duplicate") {
-			log.Warnf("usage: migrate column first_token_ms: %v", err)
-		}
-	}
-}
-
-func migrateRequestLogDetailColumn(db *sql.DB) {
-	_, err := db.Exec("ALTER TABLE request_log_content ADD COLUMN detail_content BLOB NOT NULL DEFAULT X''")
-	if err != nil {
-		if !strings.Contains(err.Error(), "duplicate") {
-			log.Warnf("usage: migrate column detail_content: %v", err)
-		}
-	}
-}
-
-// migrateUserIDColumn adds user_id column to an existing request_logs table.
-func migrateUserIDColumn(db *sql.DB) {
-	_, err := db.Exec("ALTER TABLE request_logs ADD COLUMN user_id INTEGER DEFAULT NULL")
-	if err != nil {
-		if !strings.Contains(err.Error(), "duplicate") {
-			log.Warnf("usage: migrate column user_id: %v", err)
-		}
-	}
-}
-
-// InitDB opens (or creates) the SQLite database at the given path and creates
-// the request_logs table if it doesn't exist.
-// The storageCfg parameter is deprecated and no longer used; content is always stored.
-func InitDB(dbPath string, storageCfg config.RequestLogStorageConfig, loc *time.Location) error {
-	usageDBMu.Lock()
-	defer usageDBMu.Unlock()
-
-	if usageDB != nil {
-		return nil // already initialised
-	}
-
-	if loc == nil {
-		loc = time.Local
-	}
-	usageLoc = loc
-
-	log.Debugf("usage: opening SQLite database at %s", dbPath)
-	// NOTE: Do NOT use _journal_mode or _busy_timeout in the connection string.
-	// Those are mattn/go-sqlite3 (CGO) conventions. modernc.org/sqlite ignores them,
-	// causing data to stay in-memory without flushing to disk.
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		return fmt.Errorf("usage: open sqlite: %w", err)
-	}
-
-	db.SetMaxOpenConns(1) // SQLite performs best with a single writer
-	db.SetMaxIdleConns(1)
-
-	// Verify connectivity with a timeout to avoid hanging on WAL recovery
-	log.Debugf("usage: pinging database to verify connectivity")
-	// SQLite ping 属于服务启动期健康检查，不绑定请求生命周期；
-	// 这里使用带超时的根 context，避免 WAL 恢复阶段无限阻塞。
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer pingCancel()
-	if err := db.PingContext(pingCtx); err != nil {
-		_ = db.Close()
-		return fmt.Errorf("usage: ping sqlite: %w", err)
-	}
-
-	// Set PRAGMAs explicitly via Exec because modernc.org/sqlite does NOT
-	// support the _pragma=value connection-string syntax used by mattn/go-sqlite3.
-	if _, err := db.Exec("PRAGMA busy_timeout = 5000"); err != nil {
-		_ = db.Close()
-		return fmt.Errorf("usage: set busy_timeout: %w", err)
-	}
-	if res, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
-		log.Warnf("usage: failed to enable WAL journal mode: %v (data may not persist correctly)", err)
-	} else {
-		log.Debugf("usage: journal_mode set (result: %v)", res)
-	}
-
-	log.Debugf("usage: creating tables")
-	if _, err := db.Exec(createTableSQL); err != nil {
-		_ = db.Close()
-		return fmt.Errorf("usage: create table: %w", err)
-	}
-
-	usageDB = db
-	usageDBPath = dbPath
-	requestLogStorage = normalizeRequestLogStorageConfig(storageCfg)
-
-	log.Debugf("usage: running content column migration")
-	migrateContentColumns(db)
-	log.Debugf("usage: running cost column migration")
-	migrateCostColumn(db)
-	log.Debugf("usage: running api_key_name column migration")
-	migrateApiKeyNameColumn(db)
-	log.Debugf("usage: running first_token_ms column migration")
-	migrateFirstTokenColumn(db)
-	log.Debugf("usage: running request log detail column migration")
-	migrateRequestLogDetailColumn(db)
-	log.Debugf("usage: running user_id column migration")
-	migrateUserIDColumn(db)
-	log.Debugf("usage: initializing pricing table")
-	initPricingTable(db)
-	log.Debugf("usage: initializing model config tables")
-	initModelConfigTables(db)
-	log.Debugf("usage: initializing api_keys table")
-	initAPIKeysTable(db)
-	log.Debugf("usage: initializing api_key_permission_profiles table")
-	initAPIKeyPermissionProfilesTable(db)
-	log.Debugf("usage: initializing routing_config table")
-	initRoutingConfigTable(db)
-	log.Debugf("usage: initializing proxy_pool table")
-	initProxyPoolTable(db)
-	log.Debugf("usage: initializing runtime_settings table")
-	initRuntimeSettingsTable(db)
-
-	// Initialize GORM on top of the existing *sql.DB
-	if err := initGORM(db, dbPath); err != nil {
-		log.Warnf("usage: failed to initialize GORM: %v (falling back to raw SQL)", err)
-	} else {
-		log.Debugf("usage: running GORM auto-migration")
-		if err := runGORMAutoMigrate(); err != nil {
-			log.Warnf("usage: GORM auto-migration failed: %v", err)
-		}
-	}
-
-	log.Infof("usage: SQLite database initialised at %s", dbPath)
-	return nil
-}
-
-// CloseDB closes the SQLite database gracefully.
-func CloseDB() {
-	usageDBMu.Lock()
-	defer usageDBMu.Unlock()
-
-	// Close GORM first
-	if err := db.Close(); err != nil {
-		log.Warnf("usage: close GORM: %v", err)
-	}
-	if usageDB != nil {
-		_ = usageDB.Close()
-		usageDB = nil
-		usageLoc = nil
-		log.Info("usage: SQLite database closed")
-	}
-}
-
-// InsertLog writes a single request log entry into the SQLite database.
+// InsertLog writes a single request log entry into the database.
 // It is safe to call concurrently.
 func InsertLog(apiKeyID int64, apiKeyName, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent string) {
-	insertLog(apiKeyID, apiKeyName, nil, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, "")
+	GormInsertLog(apiKeyID, apiKeyName, nil, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, "")
 }
 
 func InsertLogWithDetails(apiKeyID int64, apiKeyName, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent, detailContent string) {
-	insertLog(apiKeyID, apiKeyName, nil, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
+	GormInsertLog(apiKeyID, apiKeyName, nil, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
 }
 
 // InsertLogWithUserID writes a request log with an associated user_id.
 func InsertLogWithUserID(apiKeyID int64, apiKeyName string, userID *int64, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
 	inputContent, outputContent, detailContent string) {
-	insertLog(apiKeyID, apiKeyName, userID, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
-}
-
-func insertLog(apiKeyID int64, apiKeyName string, userID *int64, model, source, channelName, authIndex string,
-	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
-	inputContent, outputContent, detailContent string) {
-	// Use GORM if available, otherwise fall back to raw SQL
-	if getGormDB() != nil {
-		GormInsertLog(apiKeyID, apiKeyName, userID, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
-		return
-	}
-
-	db := getDB()
-	if db == nil {
-		return
-	}
-
-	failedInt := 0
-	if failed {
-		failedInt = 1
-	}
-
-	// Calculate cost based on model pricing
-	cost := CalculateCost(model, tokens.InputTokens, tokens.OutputTokens, tokens.CachedTokens)
-
-	// 插入 request log 的事务由 usage 存储层统一拥有，不从外部 HTTP 请求透传 context，
-	// 以避免请求取消把已经选定要持久化的审计记录中断在半途。
-	tx, err := db.BeginTx(context.Background(), nil)
-	if err != nil {
-		log.Errorf("usage: begin insert tx: %v", err)
-		return
-	}
-
-	result, err := tx.Exec(
-		`INSERT INTO request_logs
-			(timestamp, api_key_id, api_key_name, user_id, model, source, channel_name, auth_index,
-			 failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		timestamp.UTC().Format(time.RFC3339Nano),
-		apiKeyID, apiKeyName, userID, model, source, channelName, authIndex,
-		failedInt, latencyMs, firstTokenMs,
-		tokens.InputTokens, tokens.OutputTokens, tokens.ReasoningTokens,
-		tokens.CachedTokens, tokens.TotalTokens, cost,
-	)
-	if err != nil {
-		_ = tx.Rollback()
-		log.Errorf("usage: insert log: %v", err)
-		return
-	}
-
-	// Always store content (RequestLogStorageConfig removed)
-	if inputContent != "" || outputContent != "" || detailContent != "" {
-		logID, errLastID := result.LastInsertId()
-		if errLastID != nil {
-			_ = tx.Rollback()
-			log.Errorf("usage: resolve inserted log id: %v", errLastID)
-			return
-		}
-		if errStore := insertLogContentTx(tx, logID, timestamp, inputContent, outputContent, detailContent); errStore != nil {
-			_ = tx.Rollback()
-			log.Errorf("usage: insert log content: %v", errStore)
-			return
-		}
-	}
-
-	if errCommit := tx.Commit(); errCommit != nil {
-		log.Errorf("usage: commit log insert: %v", errCommit)
-		return
-	}
-
-	// Notify TPM tracker about token usage (keep string callback for memory-level RPM/TPM tracking)
-	if tokenUsageCallback != nil && tokens.TotalTokens > 0 {
-		tokenUsageCallback(apiKeyName, tokens.TotalTokens)
-	}
+	GormInsertLog(apiKeyID, apiKeyName, userID, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
 }
 
 // tokenUsageCallback is set by SetTokenUsageCallback to notify external
@@ -437,201 +146,23 @@ func SetTokenUsageCallback(fn func(apiKey string, totalTokens int64)) {
 
 // QueryLogs returns a paginated, filtered list of log entries.
 func QueryLogs(params LogQueryParams) (LogQueryResult, error) {
-	if getGormDB() != nil {
-		return GormQueryLogs(params)
-	}
-	// Normalise parameters
-	if params.Page < 1 {
-		params.Page = 1
-	}
-	if params.Size < 1 {
-		params.Size = 50
-	}
-	if params.Size > 500 {
-		params.Size = 500
-	}
-	if params.Days < 1 {
-		params.Days = 7
-	}
-
-	db := getDB()
-	if db == nil {
-		// Never return nil slices in JSON responses (nil slice => null in JSON).
-		return LogQueryResult{
-			Items: make([]LogRow, 0),
-			Total: 0,
-			Page:  params.Page,
-			Size:  params.Size,
-		}, nil
-	}
-
-	where, args := buildWhereClause(params)
-
-	// Count total
-	var total int64
-	countSQL := "SELECT COUNT(*) FROM request_logs" + where
-	if err := db.QueryRow(countSQL, args...).Scan(&total); err != nil {
-		return LogQueryResult{}, fmt.Errorf("usage: count query: %w", err)
-	}
-
-	// Fetch page
-	offset := (params.Page - 1) * params.Size
-	querySQL := "SELECT id, timestamp, api_key_id, api_key_name, user_id, model, source, channel_name, auth_index, " +
-		"failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, " +
-		"cost, " +
-		"(CASE WHEN EXISTS (SELECT 1 FROM request_log_content content WHERE content.log_id = request_logs.id) " +
-		"OR length(input_content) > 0 OR length(output_content) > 0 THEN 1 ELSE 0 END) as has_content " +
-		"FROM request_logs" + where +
-		" ORDER BY timestamp DESC LIMIT ? OFFSET ?"
-	queryArgs := append(args, params.Size, offset)
-
-	rows, err := db.Query(querySQL, queryArgs...)
-	if err != nil {
-		return LogQueryResult{}, fmt.Errorf("usage: query logs: %w", err)
-	}
-	defer rows.Close()
-
-	items := make([]LogRow, 0, params.Size)
-	for rows.Next() {
-		var row LogRow
-		var ts string
-		var failedInt, hasContentInt int
-		if err := rows.Scan(
-			&row.ID, &ts, &row.APIKeyID, &row.APIKeyName, &row.UserID, &row.Model, &row.Source, &row.ChannelName,
-			&row.AuthIndex, &failedInt, &row.LatencyMs, &row.FirstTokenMs,
-			&row.InputTokens, &row.OutputTokens, &row.ReasoningTokens,
-			&row.CachedTokens, &row.TotalTokens, &row.Cost, &hasContentInt,
-		); err != nil {
-			return LogQueryResult{}, fmt.Errorf("usage: scan row: %w", err)
-		}
-		row.Timestamp, _ = time.Parse(time.RFC3339Nano, ts)
-		row.Failed = failedInt != 0
-		row.HasContent = hasContentInt != 0
-		items = append(items, row)
-	}
-
-	return LogQueryResult{
-		Items: items,
-		Total: total,
-		Page:  params.Page,
-		Size:  params.Size,
-	}, nil
+	return GormQueryLogs(params)
 }
 
 // QueryFilters returns the distinct API keys and models within the time range.
 func QueryFilters(days int) (FilterOptions, error) {
-	if getGormDB() != nil {
-		return GormQueryFilters(days)
-	}
-	if days < 1 {
-		days = 7
-	}
-	db := getDB()
-	if db == nil {
-		// Ensure stable JSON shape: slices => [] (not null).
-		return FilterOptions{
-			APIKeys:  make([]APIKeyFilterItem, 0),
-			Users:    make([]UserFilterItem, 0),
-			Models:   make([]string, 0),
-			Channels: make([]string, 0),
-		}, nil
-	}
-
-	cutoff := CutoffStartUTC(days).Format(time.RFC3339)
-
-	keys, err := queryAPIKeyFilterItems(db)
-	if err != nil {
-		return FilterOptions{}, err
-	}
-	users, err := queryUserFilterItems(db, cutoff)
-	if err != nil {
-		return FilterOptions{}, err
-	}
-	models, err := queryDistinct(db, "model", cutoff)
-	if err != nil {
-		return FilterOptions{}, err
-	}
-	channels, err := queryDistinct(db, "channel_name", cutoff)
-	if err != nil {
-		return FilterOptions{}, err
-	}
-
-	return FilterOptions{
-		APIKeys:  keys,
-		Users:    users,
-		Models:   models,
-		Channels: channels,
-	}, nil
+	return GormQueryFilters(days)
 }
 
 // QueryStats returns aggregated statistics over the filtered dataset.
 func QueryStats(params LogQueryParams) (LogStats, error) {
-	if getGormDB() != nil {
-		return GormQueryStats(params)
-	}
-	db := getDB()
-	if db == nil {
-		return LogStats{}, nil
-	}
-	if params.Days < 1 {
-		params.Days = 7
-	}
-
-	where, args := buildWhereClause(params)
-
-	var total, successCount, totalTokens int64
-	var totalCost float64
-	statsSQL := "SELECT COUNT(*), COALESCE(SUM(CASE WHEN failed=0 THEN 1 ELSE 0 END),0), COALESCE(SUM(total_tokens),0), COALESCE(SUM(cost),0) " +
-		"FROM request_logs" + where
-	if err := db.QueryRow(statsSQL, args...).Scan(&total, &successCount, &totalTokens, &totalCost); err != nil {
-		return LogStats{}, fmt.Errorf("usage: stats query: %w", err)
-	}
-
-	var successRate float64
-	if total > 0 {
-		successRate = float64(successCount) / float64(total) * 100
-	}
-
-	return LogStats{
-		Total:       total,
-		SuccessRate: successRate,
-		TotalTokens: totalTokens,
-		TotalCost:   totalCost,
-	}, nil
+	return GormQueryStats(params)
 }
 
 // DeleteLogsByAPIKeyID removes all request_logs and request_log_content entries
 // for the given API key ID. Returns the number of deleted log rows.
 func DeleteLogsByAPIKeyID(apiKeyID int64) (int64, error) {
-	if getGormDB() != nil {
-		return GormDeleteLogsByAPIKeyID(apiKeyID)
-	}
-	db := getDB()
-	if db == nil {
-		return 0, fmt.Errorf("usage: database not initialised")
-	}
-	if apiKeyID <= 0 {
-		return 0, fmt.Errorf("usage: invalid api_key_id")
-	}
-
-	// Delete associated content rows first (FK cascade may handle this,
-	// but be explicit to ensure cleanup even without FK enforcement).
-	_, _ = db.Exec(
-		`DELETE FROM request_log_content WHERE log_id IN
-		 (SELECT id FROM request_logs WHERE api_key_id = ?)`, apiKeyID)
-
-	result, err := db.Exec("DELETE FROM request_logs WHERE api_key_id = ?", apiKeyID)
-	if err != nil {
-		return 0, fmt.Errorf("usage: delete logs by api_key_id: %w", err)
-	}
-	deleted, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("usage: affected rows: %w", err)
-	}
-	if deleted > 0 {
-		log.Infof("usage: deleted %d request log(s) for api_key_id=%d", deleted, apiKeyID)
-	}
-	return deleted, nil
+	return GormDeleteLogsByAPIKeyID(apiKeyID)
 }
 
 // DeleteLogsByAPIKey is retained for backward compatibility.
@@ -677,57 +208,75 @@ type DashboardTrends struct {
 	ThroughputSeries []DashboardThroughputPoint `json:"throughput_series"`
 }
 
-// QueryDashboardKPI returns aggregated KPI data from SQLite for the dashboard.
-// This replaces the old in-memory snapshot-based counting which lost data on restart.
+// QueryDashboardKPI returns aggregated KPI data for the dashboard.
 func QueryDashboardKPI(days int) (DashboardKPI, error) {
-	if getGormDB() != nil {
-		return GormQueryDashboardKPI(days)
-	}
-	db := getDB()
-	if db == nil {
-		return DashboardKPI{}, nil
-	}
+	return GormQueryDashboardKPI(days)
+}
+
+// QueryDashboardTrends returns fixed-width trend buckets used by the dashboard.
+func QueryDashboardTrends(days int) (DashboardTrends, error) {
+	return GormQueryDashboardTrends(days)
+}
+
+func emptyDashboardTrends(days int) DashboardTrends {
 	if days < 1 {
 		days = 7
 	}
-
-	cutoff := CutoffStartUTC(days).Format(time.RFC3339)
-
-	var kpi DashboardKPI
-	err := db.QueryRow(`
-		SELECT
-			COUNT(*),
-			COALESCE(SUM(CASE WHEN failed=0 THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN failed=1 THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(input_tokens), 0),
-			COALESCE(SUM(output_tokens), 0),
-			COALESCE(SUM(reasoning_tokens), 0),
-			COALESCE(SUM(cached_tokens), 0),
-			COALESCE(SUM(total_tokens), 0),
-			COALESCE(SUM(cost), 0)
-		FROM request_logs
-		WHERE timestamp >= ?
-	`, cutoff).Scan(
-		&kpi.TotalRequests,
-		&kpi.SuccessRequests,
-		&kpi.FailedRequests,
-		&kpi.InputTokens,
-		&kpi.OutputTokens,
-		&kpi.ReasoningTokens,
-		&kpi.CachedTokens,
-		&kpi.TotalTokens,
-		&kpi.TotalCost,
-	)
-	if err != nil {
-		return DashboardKPI{}, fmt.Errorf("usage: dashboard KPI query: %w", err)
-	}
-
-	if kpi.TotalRequests > 0 {
-		kpi.SuccessRate = float64(kpi.SuccessRequests) / float64(kpi.TotalRequests) * 100
-	}
-
-	return kpi, nil
+	loc := getUsageLocation()
+	trends := dashboardTrendsFromBuckets(buildDashboardBuckets(days, loc))
+	trends.ThroughputSeries = throughputSeriesFromBuckets(buildRecentThroughputBucketsAt(time.Now(), loc))
+	return trends
 }
+
+// MigrateFromSnapshot is retained for API compatibility but no longer
+// migrates individual request details as they are no longer stored in memory.
+func MigrateFromSnapshot(snapshot StatisticsSnapshot) (int64, error) {
+	return 0, nil
+}
+
+// --- internal helpers ---
+
+func getUsageLocation() *time.Location {
+	usageDBMu.Lock()
+	defer usageDBMu.Unlock()
+	if usageLoc == nil {
+		return time.Local
+	}
+	return usageLoc
+}
+
+func cutoffStartUTCAt(now time.Time, days int) time.Time {
+	if days < 1 {
+		days = 7
+	}
+	loc := getUsageLocation()
+	now = now.In(loc)
+	todayStartLocal := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	return todayStartLocal.AddDate(0, 0, -(days - 1)).UTC()
+}
+
+// CutoffStartUTC returns the start-of-day cutoff for the given number of days
+// in the project-configured timezone, converted to UTC. Exported so that
+// dashboard and other callers can reuse the same time-range semantics.
+func CutoffStartUTC(days int) time.Time {
+	return cutoffStartUTCAt(time.Now(), days)
+}
+
+func localDayKeyAt(t time.Time) string {
+	loc := getUsageLocation()
+	return t.In(loc).Format("2006-01-02")
+}
+
+// LocalDayKeyAt returns the YYYY-MM-DD day key in the project-configured timezone.
+func LocalDayKeyAt(t time.Time) string {
+	return localDayKeyAt(t)
+}
+
+func cutoffDayKey(days int) string {
+	return localDayKeyAt(CutoffStartUTC(days))
+}
+
+// --- Dashboard bucket helpers (shared between raw and GORM paths) ---
 
 type dashboardBucket struct {
 	label      string
@@ -740,89 +289,6 @@ type dashboardBucket struct {
 }
 
 const dashboardThroughputBucketCount = 7
-
-// QueryDashboardTrends returns fixed-width trend buckets used by the dashboard.
-// KPI trends follow the selected day range, while throughput always shows the
-// most recent 7 one-minute buckets.
-func QueryDashboardTrends(days int) (DashboardTrends, error) {
-	if getGormDB() != nil {
-		return GormQueryDashboardTrends(days)
-	}
-	db := getDB()
-	if db == nil {
-		return emptyDashboardTrends(days), nil
-	}
-	if days < 1 {
-		days = 7
-	}
-
-	loc := getUsageLocation()
-	buckets := buildDashboardBuckets(days, loc)
-	byKey := make(map[string]*dashboardBucket, len(buckets))
-	for i := range buckets {
-		byKey[buckets[i].key] = &buckets[i]
-	}
-
-	rows, err := db.Query(`
-		SELECT timestamp, failed, total_tokens
-		FROM request_logs
-		WHERE timestamp >= ?
-	`, CutoffStartUTC(days).Format(time.RFC3339))
-	if err != nil {
-		return DashboardTrends{}, fmt.Errorf("usage: query dashboard trends: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var ts string
-		var failedInt int
-		var totalTokens int64
-		if err := rows.Scan(&ts, &failedInt, &totalTokens); err != nil {
-			return DashboardTrends{}, fmt.Errorf("usage: scan dashboard trend row: %w", err)
-		}
-		parsed, err := time.Parse(time.RFC3339Nano, ts)
-		if err != nil {
-			parsed, err = time.Parse(time.RFC3339, ts)
-			if err != nil {
-				continue
-			}
-		}
-		key := dashboardBucketKey(parsed.In(loc), days)
-		bucket := byKey[key]
-		if bucket == nil {
-			continue
-		}
-		bucket.requests++
-		bucket.totalToken += totalTokens
-		if failedInt != 0 {
-			bucket.failed++
-		} else {
-			bucket.success++
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return DashboardTrends{}, fmt.Errorf("usage: iterate dashboard trends: %w", err)
-	}
-
-	throughputSeries, err := queryDashboardThroughputSeriesAt(time.Now(), loc)
-	if err != nil {
-		return DashboardTrends{}, err
-	}
-
-	trends := dashboardTrendsFromBuckets(buckets)
-	trends.ThroughputSeries = throughputSeries
-	return trends, nil
-}
-
-func emptyDashboardTrends(days int) DashboardTrends {
-	if days < 1 {
-		days = 7
-	}
-	loc := getUsageLocation()
-	trends := dashboardTrendsFromBuckets(buildDashboardBuckets(days, loc))
-	trends.ThroughputSeries = throughputSeriesFromBuckets(buildRecentThroughputBucketsAt(time.Now(), loc))
-	return trends
-}
 
 func buildDashboardBuckets(days int, loc *time.Location) []dashboardBucket {
 	if loc == nil {
@@ -879,60 +345,6 @@ func buildRecentThroughputBucketsAt(now time.Time, loc *time.Location) []dashboa
 	return buckets
 }
 
-func queryDashboardThroughputSeriesAt(now time.Time, loc *time.Location) ([]DashboardThroughputPoint, error) {
-	db := getDB()
-	if db == nil {
-		return throughputSeriesFromBuckets(buildRecentThroughputBucketsAt(now, loc)), nil
-	}
-	if loc == nil {
-		loc = time.Local
-	}
-
-	buckets := buildRecentThroughputBucketsAt(now, loc)
-	byKey := make(map[string]*dashboardBucket, len(buckets))
-	for i := range buckets {
-		byKey[buckets[i].key] = &buckets[i]
-	}
-
-	start := now.In(loc).Truncate(time.Minute).Add(-time.Duration(dashboardThroughputBucketCount-1) * time.Minute)
-	rows, err := db.Query(`
-		SELECT timestamp, total_tokens
-		FROM request_logs
-		WHERE timestamp >= ?
-	`, start.UTC().Format(time.RFC3339))
-	if err != nil {
-		return nil, fmt.Errorf("usage: query dashboard throughput trends: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var ts string
-		var totalTokens int64
-		if err := rows.Scan(&ts, &totalTokens); err != nil {
-			return nil, fmt.Errorf("usage: scan dashboard throughput row: %w", err)
-		}
-		parsed, err := time.Parse(time.RFC3339Nano, ts)
-		if err != nil {
-			parsed, err = time.Parse(time.RFC3339, ts)
-			if err != nil {
-				continue
-			}
-		}
-		key := parsed.In(loc).Truncate(time.Minute).Format("2006-01-02 15:04")
-		bucket := byKey[key]
-		if bucket == nil {
-			continue
-		}
-		bucket.requests++
-		bucket.totalToken += totalTokens
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("usage: iterate dashboard throughput rows: %w", err)
-	}
-
-	return throughputSeriesFromBuckets(buckets), nil
-}
-
 func dashboardTrendsFromBuckets(buckets []dashboardBucket) DashboardTrends {
 	trends := DashboardTrends{
 		RequestVolume:    make([]DashboardTrendPoint, 0, len(buckets)),
@@ -975,77 +387,191 @@ func throughputSeriesFromBuckets(buckets []dashboardBucket) []DashboardThroughpu
 	return points
 }
 
-// MigrateFromSnapshot imports all request details from an existing
-// MigrateFromSnapshot is retained for API compatibility but no longer
-// migrates individual request details as they are no longer stored in memory.
-func MigrateFromSnapshot(snapshot StatisticsSnapshot) (int64, error) {
-	// Re-enable this to logic to parse aggregates if needed.
-	// We no longer migrate Details since we no longer keep track of them in memory
-	// and they are persisted real-time.
-	return 0, nil
+// QueryModelsForKey returns the distinct models used by a specific API key ID within the time range.
+func QueryModelsForKey(apiKeyID int64, days int) ([]string, error) {
+	return GormQueryModelsForKey(apiKeyID, days)
 }
 
-// --- internal helpers ---
-
-func parseStoredTime(value string) (time.Time, bool) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return time.Time{}, false
-	}
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed.UTC(), true
-		}
-	}
-	return time.Time{}, false
+// LogContentResult holds the content detail for a single log entry.
+type LogContentResult struct {
+	ID            int64  `json:"id"`
+	InputContent  string `json:"input_content"`
+	OutputContent string `json:"output_content"`
+	Model         string `json:"model"`
 }
 
-func getDB() *sql.DB {
+// LogContentPartResult holds one side (input/output) of the content detail for a single log entry.
+type LogContentPartResult struct {
+	ID      int64  `json:"id"`
+	Content string `json:"content"`
+	Model   string `json:"model"`
+	Part    string `json:"part"`
+}
+
+func normalizeLogContentPart(part string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(part)) {
+	case "input":
+		return "input", nil
+	case "output":
+		return "output", nil
+	case "details":
+		return "details", nil
+	default:
+		return "", fmt.Errorf("usage: invalid content part %q", part)
+	}
+}
+
+// QueryLogContent retrieves the stored request/response content for a single log entry.
+func QueryLogContent(id int64) (LogContentResult, error) {
+	return GormQueryLogContent(id)
+}
+
+// QueryLogContentPart retrieves only one side (input/output) of the stored request/response content
+// for a single log entry.
+func QueryLogContentPart(id int64, part string) (LogContentPartResult, error) {
+	return GormQueryLogContentPart(id, part)
+}
+
+// QueryLogContentForKey retrieves log content for a single entry, but only if it belongs to the given API key.
+func QueryLogContentForKey(id int64, apiKeyID int64) (LogContentResult, error) {
+	return GormQueryLogContentForKey(id, apiKeyID)
+}
+
+// QueryLogContentPartForKey retrieves only one side (input/output) of the stored request/response content
+// for a single entry, but only if it belongs to the given API key.
+func QueryLogContentPartForKey(id int64, apiKeyID int64, part string) (LogContentPartResult, error) {
+	return GormQueryLogContentPartForKey(id, apiKeyID, part)
+}
+
+// DailySeriesPoint holds one day of aggregated usage data.
+type DailySeriesPoint struct {
+	Date         string `json:"date"`
+	Requests     int    `json:"requests"`
+	FailedReq    int    `json:"failed_requests"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
+}
+
+// ModelDistributionPoint holds aggregated usage data for a single model.
+type ModelDistributionPoint struct {
+	Model    string `json:"model"`
+	Requests int64  `json:"requests"`
+	Tokens   int64  `json:"tokens"`
+}
+
+// QueryDailySeries returns per-day aggregated request count and token usage for a given API key.
+func QueryDailySeries(apiKeyID int64, days int) ([]DailySeriesPoint, error) {
+	return GormQueryDailySeries(apiKeyID, days)
+}
+
+// QueryModelDistribution returns request count and token usage grouped by model for a given API key.
+func QueryModelDistribution(apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
+	return GormQueryModelDistribution(apiKeyID, days)
+}
+
+// APIKeyDistributionPoint holds aggregated usage data for a single API key.
+type APIKeyDistributionPoint struct {
+	APIKeyID int64  `json:"api_key_id"`
+	Name     string `json:"name"`
+	Requests int64  `json:"requests"`
+	Tokens   int64  `json:"tokens"`
+}
+
+// QueryAPIKeyDistribution returns request count and token usage grouped by api_key.
+func QueryAPIKeyDistribution(days int) ([]APIKeyDistributionPoint, error) {
+	return GormQueryAPIKeyDistribution(days)
+}
+
+// GetDBPath returns the file path of the database, or empty if not initialised.
+func GetDBPath() string {
 	usageDBMu.Lock()
 	defer usageDBMu.Unlock()
-	return usageDB
+	return usageDBPath
 }
 
-func getUsageLocation() *time.Location {
-	usageDBMu.Lock()
-	defer usageDBMu.Unlock()
-	if usageLoc == nil {
-		return time.Local
-	}
-	return usageLoc
+// HourlyTokenPoint holds token usage per hour for the last N hours.
+type HourlyTokenPoint struct {
+	Hour            string `json:"hour"`
+	InputTokens     int64  `json:"input_tokens"`
+	OutputTokens    int64  `json:"output_tokens"`
+	ReasoningTokens int64  `json:"reasoning_tokens"`
+	CachedTokens    int64  `json:"cached_tokens"`
+	TotalTokens     int64  `json:"total_tokens"`
 }
 
-func cutoffStartUTCAt(now time.Time, days int) time.Time {
-	if days < 1 {
-		days = 7
-	}
-	loc := getUsageLocation()
-	now = now.In(loc)
-	todayStartLocal := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-	return todayStartLocal.AddDate(0, 0, -(days - 1)).UTC()
+// HourlyModelPoint holds model request counts per hour.
+type HourlyModelPoint struct {
+	Hour     string `json:"hour"`
+	Model    string `json:"model"`
+	Requests int64  `json:"requests"`
 }
 
-// CutoffStartUTC returns the start-of-day cutoff for the given number of days
-// in the project-configured timezone, converted to UTC. Exported so that
-// dashboard and other callers can reuse the same time-range semantics.
-func CutoffStartUTC(days int) time.Time {
-	return cutoffStartUTCAt(time.Now(), days)
+// QueryHourlySeries returns per-hour token and model aggregates for the last N hours.
+func QueryHourlySeries(apiKeyID int64, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
+	return GormQueryHourlySeries(apiKeyID, hours)
 }
 
-func localDayKeyAt(t time.Time) string {
-	loc := getUsageLocation()
-	return t.In(loc).Format("2006-01-02")
+// EntityStatPoint holds aggregated usage data for a single entity (source or auth_index).
+type EntityStatPoint struct {
+	EntityName  string  `json:"entity_name"`
+	Requests    int64   `json:"requests"`
+	Failed      int64   `json:"failed"`
+	AvgLatency  float64 `json:"avg_latency"`
+	TotalTokens int64   `json:"total_tokens"`
 }
 
-// LocalDayKeyAt returns the YYYY-MM-DD day key in the project-configured timezone.
-func LocalDayKeyAt(t time.Time) string {
-	return localDayKeyAt(t)
+// QueryEntityStats returns aggregates grouped by a given column (e.g. "source" or "auth_index").
+func QueryEntityStats(apiKeyID int64, days int, groupColumn string) ([]EntityStatPoint, error) {
+	return GormQueryEntityStats(apiKeyID, days, groupColumn)
 }
 
-func cutoffDayKey(days int) string {
-	return localDayKeyAt(CutoffStartUTC(days))
+func QueryDailyCallsByAuthIndexes(authIndexes []string, days int) ([]DailyCountPoint, error) {
+	return GormQueryDailyCallsByAuthIndexes(authIndexes, days)
 }
 
+func QueryHourlyCallsByAuthIndex(authIndex string, hours int) ([]HourlyCountPoint, error) {
+	return GormQueryHourlyCallsByAuthIndex(authIndex, hours)
+}
+
+func QueryRequestCountByAuthIndexSince(authIndex string, since time.Time) (int64, error) {
+	return GormQueryRequestCountByAuthIndexSince(authIndex, since)
+}
+
+// GetRequestLogStorageBytes returns the approximate bytes currently occupied by
+// stored request/response bodies.
+func GetRequestLogStorageBytes() (int64, error) {
+	return GormGetRequestLogStorageBytes()
+}
+
+// ChannelLatency holds the average latency stats for a single channel (source).
+type ChannelLatency struct {
+	Source string  `json:"source"`
+	Count  int64   `json:"count"`
+	AvgMs  float64 `json:"avg_ms"`
+}
+
+// GetChannelAvgLatency returns average request latency grouped by source (channel)
+// for the last N days.
+func GetChannelAvgLatency(days int) ([]ChannelLatency, error) {
+	return GormGetChannelAvgLatency(days)
+}
+
+// CountTodayByKey returns the number of requests made by the given API key today (project timezone).
+func CountTodayByKey(apiKeyID int64) (int64, error) {
+	return GormCountTodayByKey(apiKeyID)
+}
+
+// CountTotalByKey returns the total number of requests made by the given API key.
+func CountTotalByKey(apiKeyID int64) (int64, error) {
+	return GormCountTotalByKey(apiKeyID)
+}
+
+// QueryTotalCostByKey returns the total accumulated cost for a given API key ID.
+func QueryTotalCostByKey(apiKeyID int64) (float64, error) {
+	return GormQueryTotalCostByKey(apiKeyID)
+}
+
+// buildWhereClause constructs a WHERE clause from query params for GORM usage.
 func buildWhereClause(params LogQueryParams) (string, []interface{}) {
 	conditions := make([]string, 0, 4)
 	args := make([]interface{}, 0, 4)
@@ -1056,7 +582,6 @@ func buildWhereClause(params LogQueryParams) (string, []interface{}) {
 
 	if params.APIKeyID != 0 {
 		if params.APIKeyID == -1 {
-			// System requests: api_key_id = 0 (replaces old string pattern matching on api_key column)
 			conditions = append(conditions, "api_key_id = 0")
 		} else {
 			conditions = append(conditions, "api_key_id = ?")
@@ -1108,7 +633,6 @@ func buildWhereClause(params LogQueryParams) (string, []interface{}) {
 		if len(filterConditions) > 0 {
 			conditions = append(conditions, "("+strings.Join(filterConditions, " OR ")+")")
 		} else {
-			// If caller attempted to filter but provided no usable channel selectors, match nothing.
 			conditions = append(conditions, "1 = 0")
 		}
 	}
@@ -1119,877 +643,62 @@ func buildWhereClause(params LogQueryParams) (string, []interface{}) {
 	return " WHERE " + strings.Join(conditions, " AND "), args
 }
 
-func queryDistinct(db *sql.DB, column, cutoff string) ([]string, error) {
-	q := fmt.Sprintf("SELECT DISTINCT %s FROM request_logs WHERE timestamp >= ? ORDER BY %s", column, column)
-	rows, err := db.Query(q, cutoff)
-	if err != nil {
-		return nil, fmt.Errorf("usage: distinct %s: %w", column, err)
+// parseStoredTime parses a stored timestamp string into a time.Time.
+func parseStoredTime(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
 	}
-	defer rows.Close()
-
-	result := make([]string, 0)
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			return nil, err
-		}
-		if v != "" {
-			result = append(result, v)
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed.UTC(), true
 		}
 	}
-	return result, nil
+	return time.Time{}, false
 }
 
-func queryAPIKeyFilterItems(db *sql.DB) ([]APIKeyFilterItem, error) {
-	rows, err := db.Query("SELECT id, name FROM api_keys ORDER BY created_at ASC")
-	if err != nil {
-		return nil, fmt.Errorf("usage: query api_key filter items: %w", err)
-	}
-	defer rows.Close()
+// CalculateCost computes the cost for a given model's token usage.
+// This is a convenience wrapper that delegates to the pricing cache.
+func CalculateCost(model string, inputTokens, outputTokens, cachedTokens int64) float64 {
+	return calculateCostFromCache(model, inputTokens, outputTokens, cachedTokens)
+}
 
-	result := make([]APIKeyFilterItem, 0)
-	for rows.Next() {
-		var item APIKeyFilterItem
-		if err := rows.Scan(&item.ID, &item.Name); err != nil {
-			return nil, err
+// calculateCostFromCache computes the cost using the in-memory pricing cache.
+// For token-based pricing it uses per-million-token rates; for per-call pricing
+// it returns the fixed PricePerCall.
+// When a cached price exists and cached tokens are a subset of input tokens
+// (cached <= input), the cached portion is deducted from input and charged at
+// the cached rate. When cached tokens exceed input (context cache from prior
+// turns), input is charged at the full rate and cached tokens are billed
+// separately. When no cached price is set, cached tokens are ignored.
+func calculateCostFromCache(model string, inputTokens, outputTokens, cachedTokens int64) float64 {
+	if cfg, ok := GetModelConfig(model); ok && cfg.PricingMode == "call" {
+		return cfg.PricePerCall
+	}
+	pricing, ok := GetModelPricing(model)
+	if !ok {
+		return 0
+	}
+	if pricing.CachedPricePerMillion > 0 && cachedTokens > 0 {
+		if cachedTokens <= inputTokens {
+			// Cached tokens are a subset of input: deduct from input, charge at cached rate
+			nonCachedInput := inputTokens - cachedTokens
+			return pricing.InputPricePerMillion*float64(nonCachedInput)/1_000_000 +
+				pricing.OutputPricePerMillion*float64(outputTokens)/1_000_000 +
+				pricing.CachedPricePerMillion*float64(cachedTokens)/1_000_000
 		}
-		result = append(result, item)
+		// Cached tokens exceed input (context cache): charge both separately
+		return pricing.InputPricePerMillion*float64(inputTokens)/1_000_000 +
+			pricing.OutputPricePerMillion*float64(outputTokens)/1_000_000 +
+			pricing.CachedPricePerMillion*float64(cachedTokens)/1_000_000
 	}
-	return result, nil
+	return pricing.InputPricePerMillion*float64(inputTokens)/1_000_000 +
+		pricing.OutputPricePerMillion*float64(outputTokens)/1_000_000
 }
 
-func queryUserFilterItems(db *sql.DB, cutoff string) ([]UserFilterItem, error) {
-	rows, err := db.Query(
-		`SELECT DISTINCT u.id, u.name FROM request_logs rl JOIN users u ON u.id = rl.user_id WHERE rl.timestamp >= ? AND rl.user_id IS NOT NULL ORDER BY u.name`,
-		cutoff,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("usage: query user filter items: %w", err)
-	}
-	defer rows.Close()
-
-	result := make([]UserFilterItem, 0)
-	for rows.Next() {
-		var item UserFilterItem
-		if err := rows.Scan(&item.ID, &item.Name); err != nil {
-			return nil, err
-		}
-		result = append(result, item)
-	}
-	return result, nil
-}
-
-// QueryModelsForKey returns the distinct models used by a specific API key ID within the time range.
-func QueryModelsForKey(apiKeyID int64, days int) ([]string, error) {
-	if getGormDB() != nil {
-		return GormQueryModelsForKey(apiKeyID, days)
-	}
-	db := getDB()
-	if db == nil {
-		return make([]string, 0), nil
-	}
-	if days < 1 {
-		days = 7
-	}
-	cutoff := CutoffStartUTC(days).Format(time.RFC3339)
-
-	rows, err := db.Query(
-		"SELECT DISTINCT model FROM request_logs WHERE api_key_id = ? AND timestamp >= ? AND model != '' ORDER BY model",
-		apiKeyID, cutoff,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("usage: distinct models for key: %w", err)
-	}
-	defer rows.Close()
-
-	result := make([]string, 0)
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			return nil, err
-		}
-		result = append(result, v)
-	}
-	return result, nil
-}
-
-// LogContentResult holds the content detail for a single log entry.
-type LogContentResult struct {
-	ID            int64  `json:"id"`
-	InputContent  string `json:"input_content"`
-	OutputContent string `json:"output_content"`
-	Model         string `json:"model"`
-}
-
-// LogContentPartResult holds one side (input/output) of the content detail for a single log entry.
-// It is used to avoid decompressing/transferring both large blobs when the UI only needs one tab.
-type LogContentPartResult struct {
-	ID      int64  `json:"id"`
-	Content string `json:"content"`
-	Model   string `json:"model"`
-	Part    string `json:"part"`
-}
-
-func normalizeLogContentPart(part string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(part)) {
-	case "input":
-		return "input", nil
-	case "output":
-		return "output", nil
-	case "details":
-		return "details", nil
-	default:
-		return "", fmt.Errorf("usage: invalid content part %q", part)
-	}
-}
-
-// QueryLogContent retrieves the stored request/response content for a single log entry.
-func QueryLogContent(id int64) (LogContentResult, error) {
-	if getGormDB() != nil {
-		return GormQueryLogContent(id)
-	}
-	db := getDB()
-	if db == nil {
-		return LogContentResult{}, fmt.Errorf("usage: database not initialised")
-	}
-
-	result, err := queryCompressedLogContent(
-		db,
-		`SELECT logs.id, logs.model, content.compression, content.input_content, content.output_content
-		 FROM request_logs logs
-		 JOIN request_log_content content ON content.log_id = logs.id
-		 WHERE logs.id = ?`,
-		id,
-	)
-	if err == nil {
-		return result, nil
-	}
-
-	var fallback LogContentResult
-	err = db.QueryRow(
-		"SELECT id, model, input_content, output_content FROM request_logs WHERE id = ?", id,
-	).Scan(&fallback.ID, &fallback.Model, &fallback.InputContent, &fallback.OutputContent)
-	if err != nil {
-		return LogContentResult{}, fmt.Errorf("usage: query log content: %w", err)
-	}
-	return fallback, nil
-}
-
-// QueryLogContentPart retrieves only one side (input/output) of the stored request/response content
-// for a single log entry. This avoids decompressing/transferring both blobs for the UI.
-func QueryLogContentPart(id int64, part string) (LogContentPartResult, error) {
-	if getGormDB() != nil {
-		return GormQueryLogContentPart(id, part)
-	}
-	db := getDB()
-	if db == nil {
-		return LogContentPartResult{}, fmt.Errorf("usage: database not initialised")
-	}
-
-	part, err := normalizeLogContentPart(part)
-	if err != nil {
-		return LogContentPartResult{}, err
-	}
-
-	column := "input_content"
-	if part == "output" {
-		column = "output_content"
-	} else if part == "details" {
-		column = "detail_content"
-	}
-
-	result, err := queryCompressedLogContentPart(
-		db,
-		part,
-		fmt.Sprintf(
-			`SELECT logs.id, logs.model, content.compression, content.%s
-			 FROM request_logs logs
-			 JOIN request_log_content content ON content.log_id = logs.id
-			 WHERE logs.id = ?`,
-			column,
-		),
-		id,
-	)
-	if err == nil {
-		return result, nil
-	}
-	if part == "details" {
-		var fallback LogContentPartResult
-		fallback.Part = part
-		err = db.QueryRow("SELECT id, model FROM request_logs WHERE id = ?", id).Scan(&fallback.ID, &fallback.Model)
-		if err != nil {
-			return LogContentPartResult{}, fmt.Errorf("usage: query log content part: %w", err)
-		}
-		return fallback, nil
-	}
-
-	var fallback LogContentPartResult
-	fallback.Part = part
-	err = db.QueryRow(
-		fmt.Sprintf("SELECT id, model, %s FROM request_logs WHERE id = ?", column),
-		id,
-	).Scan(&fallback.ID, &fallback.Model, &fallback.Content)
-	if err != nil {
-		return LogContentPartResult{}, fmt.Errorf("usage: query log content part: %w", err)
-	}
-	return fallback, nil
-}
-
-// QueryLogContentForKey retrieves log content for a single entry, but only if it belongs to the given API key.
-// This is used by the public endpoint to ensure users can only access their own logs.
-func QueryLogContentForKey(id int64, apiKeyID int64) (LogContentResult, error) {
-	if getGormDB() != nil {
-		return GormQueryLogContentForKey(id, apiKeyID)
-	}
-	db := getDB()
-	if db == nil {
-		return LogContentResult{}, fmt.Errorf("usage: database not initialised")
-	}
-
-	result, err := queryCompressedLogContent(
-		db,
-		`SELECT logs.id, logs.model, content.compression, content.input_content, content.output_content
-		 FROM request_logs logs
-		 JOIN request_log_content content ON content.log_id = logs.id
-		 WHERE logs.id = ? AND logs.api_key_id = ?`,
-		id, apiKeyID,
-	)
-	if err == nil {
-		return result, nil
-	}
-
-	var fallback LogContentResult
-	err = db.QueryRow(
-		"SELECT id, model, input_content, output_content FROM request_logs WHERE id = ? AND api_key_id = ?", id, apiKeyID,
-	).Scan(&fallback.ID, &fallback.Model, &fallback.InputContent, &fallback.OutputContent)
-	if err != nil {
-		return LogContentResult{}, fmt.Errorf("usage: query log content: %w", err)
-	}
-	return fallback, nil
-}
-
-// QueryLogContentPartForKey retrieves only one side (input/output) of the stored request/response content
-// for a single entry, but only if it belongs to the given API key.
-func QueryLogContentPartForKey(id int64, apiKeyID int64, part string) (LogContentPartResult, error) {
-	if getGormDB() != nil {
-		return GormQueryLogContentPartForKey(id, apiKeyID, part)
-	}
-	db := getDB()
-	if db == nil {
-		return LogContentPartResult{}, fmt.Errorf("usage: database not initialised")
-	}
-
-	part, err := normalizeLogContentPart(part)
-	if err != nil {
-		return LogContentPartResult{}, err
-	}
-
-	column := "input_content"
-	if part == "output" {
-		column = "output_content"
-	} else if part == "details" {
-		column = "detail_content"
-	}
-
-	result, err := queryCompressedLogContentPart(
-		db,
-		part,
-		fmt.Sprintf(
-			`SELECT logs.id, logs.model, content.compression, content.%s
-			 FROM request_logs logs
-			 JOIN request_log_content content ON content.log_id = logs.id
-			 WHERE logs.id = ? AND logs.api_key_id = ?`,
-			column,
-		),
-		id, apiKeyID,
-	)
-	if err == nil {
-		return result, nil
-	}
-	if part == "details" {
-		var fallback LogContentPartResult
-		fallback.Part = part
-		err = db.QueryRow("SELECT id, model FROM request_logs WHERE id = ? AND api_key_id = ?", id, apiKeyID).Scan(&fallback.ID, &fallback.Model)
-		if err != nil {
-			return LogContentPartResult{}, fmt.Errorf("usage: query log content part: %w", err)
-		}
-		return fallback, nil
-	}
-
-	var fallback LogContentPartResult
-	fallback.Part = part
-	err = db.QueryRow(
-		fmt.Sprintf("SELECT id, model, %s FROM request_logs WHERE id = ? AND api_key_id = ?", column),
-		id, apiKeyID,
-	).Scan(&fallback.ID, &fallback.Model, &fallback.Content)
-	if err != nil {
-		return LogContentPartResult{}, fmt.Errorf("usage: query log content part: %w", err)
-	}
-	return fallback, nil
-}
-
-// DailySeriesPoint holds one day of aggregated usage data.
-type DailySeriesPoint struct {
-	Date         string `json:"date"`
-	Requests     int    `json:"requests"`
-	FailedReq    int    `json:"failed_requests"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
-}
-
-// ModelDistributionPoint holds aggregated usage data for a single model.
-type ModelDistributionPoint struct {
-	Model    string `json:"model"`
-	Requests int64  `json:"requests"`
-	Tokens   int64  `json:"tokens"`
-}
-
-// QueryDailySeries returns per-day aggregated request count and token usage for a given API key.
-func QueryDailySeries(apiKeyID int64, days int) ([]DailySeriesPoint, error) {
-	if getGormDB() != nil {
-		return GormQueryDailySeries(apiKeyID, days)
-	}
-	db := getDB()
-	if db == nil {
-		return nil, nil
-	}
-	if days < 1 {
-		days = 7
-	}
-
-	params := LogQueryParams{APIKeyID: apiKeyID, Days: days}
-	where, args := buildWhereClause(params)
-
-	// NOTE: timestamps are stored as UTC RFC3339 strings; localtime converts them to the process timezone
-	// (configured via TZ/time.Local) for correct day bucketing.
-	q := `SELECT date(timestamp, 'localtime') as d,
-	             COUNT(*) as reqs,
-	             SUM(CASE WHEN failed = 1 OR failed = 'true' THEN 1 ELSE 0 END) as failed_reqs,
-	             COALESCE(SUM(input_tokens),0),
-	             COALESCE(SUM(output_tokens),0)
-	      FROM request_logs` + where + `
-	      GROUP BY d ORDER BY d`
-
-	rows, err := db.Query(q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("usage: daily series query: %w", err)
-	}
-	defer rows.Close()
-
-	var result []DailySeriesPoint
-	for rows.Next() {
-		var p DailySeriesPoint
-		if err := rows.Scan(&p.Date, &p.Requests, &p.FailedReq, &p.InputTokens, &p.OutputTokens); err != nil {
-			return nil, fmt.Errorf("usage: daily series scan: %w", err)
-		}
-		result = append(result, p)
-	}
-	return result, rows.Err()
-}
-
-// QueryModelDistribution returns request count and token usage grouped by model for a given API key.
-func QueryModelDistribution(apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
-	if getGormDB() != nil {
-		return GormQueryModelDistribution(apiKeyID, days)
-	}
-	db := getDB()
-	if db == nil {
-		return nil, nil
-	}
-	if days < 1 {
-		days = 7
-	}
-
-	params := LogQueryParams{APIKeyID: apiKeyID, Days: days}
-	where, args := buildWhereClause(params)
-
-	q := `SELECT model,
-	             COUNT(*) as reqs,
-	             COALESCE(SUM(total_tokens),0)
-	      FROM request_logs` + where + `
-	      GROUP BY model ORDER BY reqs DESC`
-
-	rows, err := db.Query(q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("usage: model distribution query: %w", err)
-	}
-	defer rows.Close()
-
-	var result []ModelDistributionPoint
-	for rows.Next() {
-		var p ModelDistributionPoint
-		if err := rows.Scan(&p.Model, &p.Requests, &p.Tokens); err != nil {
-			return nil, fmt.Errorf("usage: model distribution scan: %w", err)
-		}
-		result = append(result, p)
-	}
-	return result, rows.Err()
-}
-
-// APIKeyDistributionPoint holds aggregated usage data for a single API key.
-type APIKeyDistributionPoint struct {
-	APIKeyID int64  `json:"api_key_id"`
-	Name     string `json:"name"`
-	Requests int64  `json:"requests"`
-	Tokens   int64  `json:"tokens"`
-}
-
-// QueryAPIKeyDistribution returns request count and token usage grouped by api_key.
-func QueryAPIKeyDistribution(days int) ([]APIKeyDistributionPoint, error) {
-	if getGormDB() != nil {
-		return GormQueryAPIKeyDistribution(days)
-	}
-	db := getDB()
-	if db == nil {
-		return nil, nil
-	}
-	if days < 1 {
-		days = 7
-	}
-
-	params := LogQueryParams{Days: days}
-	where, args := buildWhereClause(params)
-
-	q := `SELECT api_key_id,
-	             COALESCE(NULLIF(MAX(api_key_name),''), k.name, '') as name,
-	             COUNT(*) as reqs,
-	             COALESCE(SUM(total_tokens),0)
-	      FROM request_logs LEFT JOIN api_keys k ON k.id = api_key_id` + where + `
-	      AND api_key_id != 0
-	      GROUP BY api_key_id ORDER BY reqs DESC`
-
-	rows, err := db.Query(q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("usage: apikey distribution query: %w", err)
-	}
-	defer rows.Close()
-
-	var result []APIKeyDistributionPoint
-	for rows.Next() {
-		var p APIKeyDistributionPoint
-		if err := rows.Scan(&p.APIKeyID, &p.Name, &p.Requests, &p.Tokens); err != nil {
-			return nil, fmt.Errorf("usage: apikey distribution scan: %w", err)
-		}
-		result = append(result, p)
-	}
-	return result, rows.Err()
-}
-
-// GetDBPath returns the file path of the SQLite database, or empty if not initialised.
-func GetDBPath() string {
-	usageDBMu.Lock()
-	defer usageDBMu.Unlock()
-	return usageDBPath
-}
-
-// HourlyTokenPoint holds token usage per hour for the last N hours.
-type HourlyTokenPoint struct {
-	Hour            string `json:"hour"`
-	InputTokens     int64  `json:"input_tokens"`
-	OutputTokens    int64  `json:"output_tokens"`
-	ReasoningTokens int64  `json:"reasoning_tokens"`
-	CachedTokens    int64  `json:"cached_tokens"`
-	TotalTokens     int64  `json:"total_tokens"`
-}
-
-// HourlyModelPoint holds model request counts per hour.
-type HourlyModelPoint struct {
-	Hour     string `json:"hour"`
-	Model    string `json:"model"`
-	Requests int64  `json:"requests"`
-}
-
-// QueryHourlySeries returns per-hour token and model aggregates for the last N hours.
-func QueryHourlySeries(apiKeyID int64, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
-	if getGormDB() != nil {
-		return GormQueryHourlySeries(apiKeyID, hours)
-	}
-	db := getDB()
-	if db == nil {
-		return nil, nil, nil
-	}
-	if hours < 1 {
-		hours = 24
-	}
-
-	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).UTC().Format(time.RFC3339)
-
-	// Build WHERE clause directly with the correct hourly cutoff.
-	conditions := []string{"timestamp >= ?"}
-	args := []interface{}{cutoff}
-	if apiKeyID != 0 {
-		conditions = append(conditions, "api_key_id = ?")
-		args = append(args, apiKeyID)
-	}
-	where := " WHERE " + strings.Join(conditions, " AND ")
-
-	// query tokens by hour
-	tokenQuery := `SELECT strftime('%Y-%m-%d %H:00', timestamp, 'localtime') as h,
-	                      COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
-	                      COALESCE(SUM(reasoning_tokens),0), COALESCE(SUM(cached_tokens),0), COALESCE(SUM(total_tokens),0)
-	               FROM request_logs` + where + ` GROUP BY h ORDER BY h`
-	tokenRows, err := db.Query(tokenQuery, args...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("usage: hourly token query: %w", err)
-	}
-	defer tokenRows.Close()
-
-	var tokens []HourlyTokenPoint
-	for tokenRows.Next() {
-		var p HourlyTokenPoint
-		if err := tokenRows.Scan(&p.Hour, &p.InputTokens, &p.OutputTokens, &p.ReasoningTokens, &p.CachedTokens, &p.TotalTokens); err != nil {
-			return nil, nil, fmt.Errorf("usage: hourly token scan: %w", err)
-		}
-		tokens = append(tokens, p)
-	}
-
-	// query models by hour
-	modelQuery := `SELECT strftime('%Y-%m-%d %H:00', timestamp, 'localtime') as h, model, COUNT(*) as reqs
-	               FROM request_logs` + where + ` AND model != '' GROUP BY h, model ORDER BY h`
-	modelRows, err := db.Query(modelQuery, args...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("usage: hourly model query: %w", err)
-	}
-	defer modelRows.Close()
-
-	var models []HourlyModelPoint
-	for modelRows.Next() {
-		var p HourlyModelPoint
-		if err := modelRows.Scan(&p.Hour, &p.Model, &p.Requests); err != nil {
-			return nil, nil, fmt.Errorf("usage: hourly model scan: %w", err)
-		}
-		models = append(models, p)
-	}
-
-	return tokens, models, nil
-}
-
-// EntityStatPoint holds aggregated usage data for a single entity (source or auth_index).
-type EntityStatPoint struct {
-	EntityName  string  `json:"entity_name"`
-	Requests    int64   `json:"requests"`
-	Failed      int64   `json:"failed"`
-	AvgLatency  float64 `json:"avg_latency"`
-	TotalTokens int64   `json:"total_tokens"`
-}
-
-// QueryEntityStats returns aggregates grouped by a given column (e.g. "source" or "auth_index").
-// Time range is derived from days logic.
-func QueryEntityStats(apiKeyID int64, days int, groupColumn string) ([]EntityStatPoint, error) {
-	if getGormDB() != nil {
-		return GormQueryEntityStats(apiKeyID, days, groupColumn)
-	}
-	db := getDB()
-	if db == nil {
-		return nil, nil
-	}
-	if days < 1 {
-		days = 7
-	}
-	if groupColumn != "source" && groupColumn != "auth_index" {
-		return nil, fmt.Errorf("usage: invalid group column")
-	}
-
-	params := LogQueryParams{APIKeyID: apiKeyID, Days: days}
-	where, args := buildWhereClause(params)
-
-	q := fmt.Sprintf(`
-		SELECT %s, COUNT(*), COALESCE(SUM(failed),0), COALESCE(AVG(latency_ms),0), COALESCE(SUM(total_tokens),0)
-		FROM request_logs%s AND %s != ''
-		GROUP BY %s ORDER BY COUNT(*) DESC
-	`, groupColumn, where, groupColumn, groupColumn)
-
-	rows, err := db.Query(q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("usage: entity stats query: %w", err)
-	}
-	defer rows.Close()
-
-	var result []EntityStatPoint
-	for rows.Next() {
-		var p EntityStatPoint
-		if err := rows.Scan(&p.EntityName, &p.Requests, &p.Failed, &p.AvgLatency, &p.TotalTokens); err != nil {
-			return nil, fmt.Errorf("usage: entity stats scan: %w", err)
-		}
-		result = append(result, p)
-	}
-	return result, rows.Err()
-}
-
-func QueryDailyCallsByAuthIndexes(authIndexes []string, days int) ([]DailyCountPoint, error) {
-	if getGormDB() != nil {
-		return GormQueryDailyCallsByAuthIndexes(authIndexes, days)
-	}
-	db := getDB()
-	if db == nil {
-		return []DailyCountPoint{}, nil
-	}
-	if days < 1 {
-		days = 7
-	}
-	if len(authIndexes) == 0 {
-		return []DailyCountPoint{}, nil
-	}
-
-	seen := make(map[string]struct{}, len(authIndexes))
-	normalized := make([]string, 0, len(authIndexes))
-	for _, idx := range authIndexes {
-		idx = strings.TrimSpace(idx)
-		if idx == "" {
-			continue
-		}
-		if _, ok := seen[idx]; ok {
-			continue
-		}
-		seen[idx] = struct{}{}
-		normalized = append(normalized, idx)
-	}
-	if len(normalized) == 0 {
-		return []DailyCountPoint{}, nil
-	}
-
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(normalized)), ",")
-	args := make([]interface{}, 0, len(normalized)+1)
-	args = append(args, CutoffStartUTC(days).Format(time.RFC3339))
-	for _, idx := range normalized {
-		args = append(args, idx)
-	}
-
-	q := fmt.Sprintf(`
-		SELECT timestamp
-		FROM request_logs
-		WHERE timestamp >= ? AND auth_index IN (%s)
-		ORDER BY timestamp ASC
-	`, placeholders)
-
-	rows, err := db.Query(q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("usage: daily calls by auth indexes query: %w", err)
-	}
-	defer rows.Close()
-
-	byDate := make(map[string]int64, days)
-	for rows.Next() {
-		var ts string
-		if err := rows.Scan(&ts); err != nil {
-			return nil, fmt.Errorf("usage: daily calls by auth indexes scan: %w", err)
-		}
-		parsed, ok := parseStoredTime(ts)
-		if !ok {
-			continue
-		}
-		byDate[localDayKeyAt(parsed)]++
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	result := make([]DailyCountPoint, 0, len(byDate))
-	for date, requests := range byDate {
-		point := DailyCountPoint{Date: date, Requests: requests}
-		result = append(result, point)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Date < result[j].Date
+// sortDailyCountPoints sorts daily count points by date.
+func sortDailyCountPoints(points []DailyCountPoint) {
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].Date < points[j].Date
 	})
-	return result, nil
-}
-
-func QueryHourlyCallsByAuthIndex(authIndex string, hours int) ([]HourlyCountPoint, error) {
-	if getGormDB() != nil {
-		return GormQueryHourlyCallsByAuthIndex(authIndex, hours)
-	}
-	db := getDB()
-	if db == nil {
-		return []HourlyCountPoint{}, nil
-	}
-	authIndex = strings.TrimSpace(authIndex)
-	if authIndex == "" {
-		return []HourlyCountPoint{}, nil
-	}
-	if hours < 1 {
-		hours = 5
-	}
-	if hours > 24 {
-		hours = 24
-	}
-
-	loc := getUsageLocation()
-	now := time.Now().In(loc).Truncate(time.Hour)
-	start := now.Add(-time.Duration(hours-1) * time.Hour)
-	buckets := make([]HourlyCountPoint, 0, hours)
-	byKey := make(map[string]*HourlyCountPoint, hours)
-	for i := 0; i < hours; i++ {
-		key := start.Add(time.Duration(i) * time.Hour).Format("2006-01-02 15:00")
-		buckets = append(buckets, HourlyCountPoint{Hour: key, Requests: 0})
-		byKey[key] = &buckets[len(buckets)-1]
-	}
-
-	rows, err := db.Query(`
-		SELECT timestamp
-		FROM request_logs
-		WHERE timestamp >= ? AND auth_index = ?
-	`, start.UTC().Format(time.RFC3339), authIndex)
-	if err != nil {
-		return nil, fmt.Errorf("usage: hourly calls by auth index query: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var ts string
-		if err := rows.Scan(&ts); err != nil {
-			return nil, fmt.Errorf("usage: hourly calls by auth index scan: %w", err)
-		}
-		parsed, ok := parseStoredTime(ts)
-		if !ok {
-			continue
-		}
-		key := parsed.In(loc).Truncate(time.Hour).Format("2006-01-02 15:00")
-		if bucket := byKey[key]; bucket != nil {
-			bucket.Requests++
-		}
-	}
-	return buckets, rows.Err()
-}
-
-func QueryRequestCountByAuthIndexSince(authIndex string, since time.Time) (int64, error) {
-	if getGormDB() != nil {
-		return GormQueryRequestCountByAuthIndexSince(authIndex, since)
-	}
-	db := getDB()
-	if db == nil {
-		return 0, nil
-	}
-	authIndex = strings.TrimSpace(authIndex)
-	if authIndex == "" {
-		return 0, nil
-	}
-	var count int64
-	err := db.QueryRow(`
-		SELECT COUNT(*)
-		FROM request_logs
-		WHERE timestamp >= ? AND auth_index = ?
-	`, since.UTC().Format(time.RFC3339), authIndex).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("usage: request count by auth index query: %w", err)
-	}
-	return count, nil
-}
-
-// GetRequestLogStorageBytes returns the approximate bytes currently occupied by
-// stored request/response bodies. It includes compressed rows in
-// request_log_content and any legacy inline content not yet migrated out of
-// request_logs.
-func GetRequestLogStorageBytes() (int64, error) {
-	if getGormDB() != nil {
-		return GormGetRequestLogStorageBytes()
-	}
-	db := getDB()
-	if db == nil {
-		return 0, nil
-	}
-
-	var totalBytes sql.NullInt64
-	err := db.QueryRow(`
-		SELECT
-			COALESCE((
-				SELECT SUM(CAST(length(input_content) AS INTEGER) + CAST(length(output_content) AS INTEGER) + CAST(length(detail_content) AS INTEGER))
-				FROM request_log_content
-			), 0) +
-			COALESCE((
-				SELECT SUM(CAST(length(input_content) AS INTEGER) + CAST(length(output_content) AS INTEGER))
-				FROM request_logs
-				WHERE length(input_content) > 0 OR length(output_content) > 0
-			), 0)
-	`).Scan(&totalBytes)
-	if err != nil {
-		return 0, fmt.Errorf("usage: query request log storage bytes: %w", err)
-	}
-	if !totalBytes.Valid {
-		return 0, nil
-	}
-	return totalBytes.Int64, nil
-}
-
-// ChannelLatency holds the average latency stats for a single channel (source).
-type ChannelLatency struct {
-	Source string  `json:"source"`
-	Count  int64   `json:"count"`
-	AvgMs  float64 `json:"avg_ms"`
-}
-
-// GetChannelAvgLatency returns average request latency grouped by source (channel)
-// for the last N days.
-func GetChannelAvgLatency(days int) ([]ChannelLatency, error) {
-	if getGormDB() != nil {
-		return GormGetChannelAvgLatency(days)
-	}
-	db := getDB()
-	if db == nil {
-		return nil, fmt.Errorf("usage: database not initialised")
-	}
-
-	cutoff := CutoffStartUTC(days)
-	rows, err := db.Query(`
-		SELECT source, COUNT(*) as cnt, AVG(latency_ms) as avg_lat
-		FROM request_logs
-		WHERE timestamp > ? AND source != ''
-		GROUP BY source
-		ORDER BY avg_lat DESC
-		LIMIT 5
-	`, cutoff.Format(time.RFC3339))
-	if err != nil {
-		return nil, fmt.Errorf("usage: query channel latency: %w", err)
-	}
-	defer rows.Close()
-
-	var result []ChannelLatency
-	for rows.Next() {
-		var cl ChannelLatency
-		if err := rows.Scan(&cl.Source, &cl.Count, &cl.AvgMs); err != nil {
-			return nil, fmt.Errorf("usage: scan channel latency: %w", err)
-		}
-		result = append(result, cl)
-	}
-	return result, rows.Err()
-}
-
-// CountTodayByKey returns the number of requests made by the given API key today (project timezone).
-func CountTodayByKey(apiKeyID int64) (int64, error) {
-	if getGormDB() != nil {
-		return GormCountTodayByKey(apiKeyID)
-	}
-	db := getDB()
-	if db == nil {
-		return 0, nil
-	}
-	var count int64
-	err := db.QueryRow(
-		"SELECT COUNT(*) FROM request_logs WHERE api_key_id = ? AND timestamp >= ?",
-		apiKeyID, CutoffStartUTC(1).Format(time.RFC3339),
-	).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("usage: count today: %w", err)
-	}
-	return count, nil
-}
-
-// CountTotalByKey returns the total number of requests made by the given API key.
-func CountTotalByKey(apiKeyID int64) (int64, error) {
-	if getGormDB() != nil {
-		return GormCountTotalByKey(apiKeyID)
-	}
-	db := getDB()
-	if db == nil {
-		return 0, nil
-	}
-	var count int64
-	err := db.QueryRow(
-		"SELECT COUNT(*) FROM request_logs WHERE api_key_id = ?",
-		apiKeyID,
-	).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("usage: count total: %w", err)
-	}
-	return count, nil
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
+	_ "modernc.org/sqlite"
 )
 
 func initModelConfigTestDB(t *testing.T) {
@@ -110,7 +111,15 @@ func TestInitDBMergesLegacyPricingWithoutDeadlock(t *testing.T) {
 		t.Fatalf("open seed db: %v", err)
 	}
 	seedDB.SetMaxOpenConns(1)
-	if _, err := seedDB.Exec(createPricingTableSQL); err != nil {
+	if _, err := seedDB.Exec(`
+		CREATE TABLE IF NOT EXISTS model_pricing (
+			model_id TEXT PRIMARY KEY,
+			input_price_per_million REAL NOT NULL DEFAULT 0,
+			output_price_per_million REAL NOT NULL DEFAULT 0,
+			cached_price_per_million REAL NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL DEFAULT ''
+		)
+	`); err != nil {
 		t.Fatalf("create legacy pricing table: %v", err)
 	}
 	if _, err := seedDB.Exec(

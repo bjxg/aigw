@@ -1,41 +1,93 @@
 package usage
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
+	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/db"
 	log "github.com/sirupsen/logrus"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// initGORM initializes the GORM instance on top of an existing *sql.DB.
-// This enables the GORM code paths in the usage package while keeping
-// the raw *sql.DB available for tables that haven't been migrated yet.
-func initGORM(sqlDB *sql.DB, dbPath string) error {
-	dialector := sqlite.Dialector{
-		DriverName: "sqlite",
-		DSN:        dbPath,
-		Conn:       sqlDB,
+// InitDB opens (or creates) the database and initializes GORM.
+// It uses db.Open to create a GORM connection with the appropriate driver,
+// then runs AutoMigrate and seeds initial data.
+func InitDB(dbPath string, storageCfg config.RequestLogStorageConfig, loc *time.Location) error {
+	usageDBMu.Lock()
+	defer usageDBMu.Unlock()
+
+	if getGormDB() != nil {
+		return nil // already initialised
 	}
 
-	gormConfig := &gorm.Config{
-		SkipDefaultTransaction: true,
-		// Disable PrepareStmt because the codebase mixes raw *sql.DB operations
-		// with GORM, and prepared statement caching can cause stale reads.
-		PrepareStmt: false,
+	if loc == nil {
+		loc = time.Local
 	}
+	usageLoc = loc
+	usageDBPath = dbPath
+	requestLogStorage = normalizeRequestLogStorageConfig(storageCfg)
 
-	gormDB, err := gorm.Open(dialector, gormConfig)
+	log.Debugf("usage: opening database at %s", dbPath)
+
+	gormDB, err := db.Open("sqlite", dbPath)
 	if err != nil {
-		return fmt.Errorf("usage: gorm open: %w", err)
+		return fmt.Errorf("usage: open database: %w", err)
 	}
 
-	// Set the global GORM instance in the db package
-	db.SetGORM(gormDB)
-	log.Infof("usage: GORM initialized on top of existing SQLite connection")
+	// Verify connectivity with a timeout to avoid hanging on WAL recovery
+	log.Debugf("usage: pinging database to verify connectivity")
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		return fmt.Errorf("usage: get underlying db: %w", err)
+	}
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer pingCancel()
+	if err := sqlDB.PingContext(pingCtx); err != nil {
+		_ = sqlDB.Close()
+		return fmt.Errorf("usage: ping database: %w", err)
+	}
+
+	// Run GORM AutoMigrate for all models
+	log.Debugf("usage: running GORM auto-migration")
+	if err := runGORMAutoMigrate(); err != nil {
+		log.Warnf("usage: GORM auto-migration failed: %v", err)
+	}
+
+	// Seed default data and load caches
+	log.Debugf("usage: merging legacy pricing into model_configs")
+	mergeLegacyPricingIntoModelConfigs()
+	log.Debugf("usage: seeding default model config rows")
+	gormSeedDefaultModelConfigRows()
+	log.Debugf("usage: reloading model config cache")
+	gormReloadModelConfigCache()
+	log.Debugf("usage: reloading model owner preset cache")
+	gormReloadModelOwnerPresetCache()
+	log.Debugf("usage: reloading pricing cache")
+	gormReloadPricingCache()
+	log.Debugf("usage: backfilling API key names")
+	GormBackfillAPIKeyNames()
+	log.Debugf("usage: ensuring openrouter model sync state row")
+	GormEnsureOpenRouterModelSyncStateRow()
+
+	log.Infof("usage: database initialised at %s", dbPath)
 	return nil
+}
+
+// CloseDB closes the database gracefully.
+func CloseDB() {
+	usageDBMu.Lock()
+	defer usageDBMu.Unlock()
+
+	stopRequestLogMaintenance()
+
+	if err := db.Close(); err != nil {
+		log.Warnf("usage: close database: %v", err)
+	}
+	usageLoc = nil
+	usageDBPath = ""
+	log.Info("usage: database closed")
 }
 
 // runGORMAutoMigrate runs GORM AutoMigrate for models that correspond to
