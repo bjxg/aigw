@@ -135,5 +135,3 @@ type PermissionProfileRepository interface {
 	List(ctx context.Context) ([]APIKeyPermissionProfileRow, error)
 	ReplaceAll(ctx context.Context, profiles []APIKeyPermissionProfileRow) error
 }
-
-

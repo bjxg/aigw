@@ -129,12 +129,12 @@ func (h *Handler) executeImageGenerationTest(ctx context.Context, payload []byte
 			}
 		}
 		resp, execErr := h.authManager.Execute(ctx, []string{"codex"}, coreexecutor.Request{
-		Model:   "",
-		Payload: execPayload,
-		Format:  "openai",
-	}, coreexecutor.Options{
-		Alt:          alt,
-		SourceFormat: "openai",
+			Model:   "",
+			Payload: execPayload,
+			Format:  "openai",
+		}, coreexecutor.Options{
+			Alt:          alt,
+			SourceFormat: "openai",
 			Metadata: map[string]any{
 				coreexecutor.SinglePickMetadataKey: true,
 			},

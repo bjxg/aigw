@@ -1170,8 +1170,6 @@ func (s *Service) oauthExcludedModels(provider, authKind string) []string {
 	return nil
 }
 
-
-
 func applyExcludedModels(models []*ModelInfo, excluded []string) []*ModelInfo {
 	if len(models) == 0 || len(excluded) == 0 {
 		return models

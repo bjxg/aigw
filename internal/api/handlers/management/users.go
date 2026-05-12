@@ -41,10 +41,10 @@ func (h *Handler) GetUsers(c *gin.Context) {
 // PostUser handles POST /v0/management/users
 func (h *Handler) PostUser(c *gin.Context) {
 	var body struct {
-		Name      string  `json:"name" binding:"required"`
-		Username  *string `json:"username"`
-		Email     *string `json:"email"`
-		Role      string  `json:"role"`
+		Name       string  `json:"name" binding:"required"`
+		Username   *string `json:"username"`
+		Email      *string `json:"email"`
+		Role       string  `json:"role"`
 		LastSeenAt *string `json:"last_seen_at"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {

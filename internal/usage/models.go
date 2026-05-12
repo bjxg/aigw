@@ -105,7 +105,7 @@ func (APIKeyPermissionProfile) TableName() string { return "api_key_permission_p
 type ModelConfig struct {
 	ModelID               string  `gorm:"primaryKey;not null" json:"model_id"`
 	OwnedBy               string  `gorm:"index:idx_model_configs_owned_by;not null;default:''" json:"owned_by"`
-	Description            string  `gorm:"not null;default:''" json:"description"`
+	Description           string  `gorm:"not null;default:''" json:"description"`
 	Enabled               bool    `gorm:"not null;default:true" json:"enabled"`
 	PricingMode           string  `gorm:"not null;default:'token'" json:"pricing_mode"`
 	InputPricePerMillion  float64 `gorm:"not null;default:0" json:"input_price_per_million"`
@@ -234,14 +234,14 @@ func IsValidUserRole(role string) bool {
 
 // User maps to the users table.
 type User struct {
-	ID        int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name      string     `gorm:"size:255;not null;default:''" json:"name"`
-	Username  *string    `gorm:"size:255;uniqueIndex:idx_users_username,where:username IS NOT NULL" json:"username,omitempty"`
-	Email     *string    `gorm:"size:255;uniqueIndex:idx_users_email,where:email IS NOT NULL" json:"email,omitempty"`
-	Role      string     `gorm:"size:50;not null;default:'pending'" json:"role"`
+	ID         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name       string     `gorm:"size:255;not null;default:''" json:"name"`
+	Username   *string    `gorm:"size:255;uniqueIndex:idx_users_username,where:username IS NOT NULL" json:"username,omitempty"`
+	Email      *string    `gorm:"size:255;uniqueIndex:idx_users_email,where:email IS NOT NULL" json:"email,omitempty"`
+	Role       string     `gorm:"size:50;not null;default:'pending'" json:"role"`
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
-	CreatedAt time.Time  `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
+	CreatedAt  time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt  time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // TableName overrides the table name.
@@ -310,5 +310,3 @@ func AllModels() []interface{} {
 // Ensure JSONStringList implements the right interfaces.
 var _ driver.Valuer = JSONStringList(nil)
 var _ interface{ Scan(interface{}) error } = (*JSONStringList)(nil)
-
-

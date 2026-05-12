@@ -169,7 +169,7 @@ func TestModelConfig_CRUD(t *testing.T) {
 		ModelID:               "gpt-4",
 		OwnedBy:               "openai",
 		Enabled:               true,
-		PricingMode:          "token",
+		PricingMode:           "token",
 		InputPricePerMillion:  30.0,
 		OutputPricePerMillion: 60.0,
 		Source:                "user",
@@ -197,8 +197,8 @@ func TestRuntimeSetting_CRUD(t *testing.T) {
 
 	setting := &RuntimeSetting{
 		SettingKey: "test-key",
-		Payload:   `{"value": "test"}`,
-		UpdatedAt: "2025-01-01T00:00:00Z",
+		Payload:    `{"value": "test"}`,
+		UpdatedAt:  "2025-01-01T00:00:00Z",
 	}
 	if err := d.Create(setting).Error; err != nil {
 		t.Fatalf("Create() error = %v", err)

@@ -629,7 +629,7 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 		Stream:          false,
 		Alt:             alt,
 		OriginalRequest: rawJSON,
-		SourceFormat:    		handlerType,
+		SourceFormat:    handlerType,
 	}
 	opts.Metadata = reqMeta
 	resp, err := h.AuthManager.Execute(ctx, providers, req, opts)

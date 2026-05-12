@@ -585,8 +585,6 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/proxy-pool", s.mgmt.PutProxyPool)
 		mgmt.POST("/proxy-pool/check", s.mgmt.PostProxyPoolCheck)
 
-
-
 		mgmt.GET("/quota-exceeded/switch-project", s.mgmt.GetSwitchProject)
 		mgmt.PUT("/quota-exceeded/switch-project", s.mgmt.PutSwitchProject)
 		mgmt.PATCH("/quota-exceeded/switch-project", s.mgmt.PutSwitchProject)
@@ -699,7 +697,6 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/vertex-api-key", s.mgmt.PutVertexCompatKeys)
 		mgmt.PATCH("/vertex-api-key", s.mgmt.PatchVertexCompatKey)
 		mgmt.DELETE("/vertex-api-key", s.mgmt.DeleteVertexCompatKey)
-
 
 		mgmt.GET("/model-definitions/:channel", s.mgmt.GetStaticModelDefinitions)
 	}

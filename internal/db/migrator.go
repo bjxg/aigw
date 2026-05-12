@@ -3,8 +3,8 @@ package db
 import (
 	"fmt"
 
-	"gorm.io/gorm"
 	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 // AutoMigrate runs GORM auto-migration for all given models.
