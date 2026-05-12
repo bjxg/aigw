@@ -235,11 +235,6 @@ func (h *Handler) buildNameMaps() (keyNameMap, channelNameMap, authIndexChannelM
 			if idx := strings.TrimSpace(auth.Index); idx != "" {
 				authIndexChannelMap[idx] = channel
 			}
-			if accountType, account := auth.AccountInfo(); strings.EqualFold(accountType, "oauth") {
-				if source := strings.TrimSpace(account); source != "" {
-					channelNameMap[source] = channel
-				}
-			}
 			if auth.Attributes != nil {
 				if email := strings.TrimSpace(auth.Attributes["email"]); email != "" {
 					channelNameMap[email] = channel

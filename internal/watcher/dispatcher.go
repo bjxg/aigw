@@ -266,10 +266,5 @@ func snapshotCoreAuths(cfg *config.Config, authDir string) []*coreauth.Auth {
 		out = append(out, auths...)
 	}
 
-	fileSynth := synthesizer.NewFileSynthesizer()
-	if auths, err := fileSynth.Synthesize(ctx); err == nil {
-		out = append(out, auths...)
-	}
-
 	return out
 }

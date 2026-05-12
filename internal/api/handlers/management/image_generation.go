@@ -531,10 +531,6 @@ func (h *Handler) ListImageGenerationChannels(c *gin.Context) {
 			if !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
 				continue
 			}
-			accountType, _ := auth.AccountInfo()
-			if !strings.EqualFold(strings.TrimSpace(accountType), "oauth") {
-				continue
-			}
 			if auth.Status == coreauth.StatusDisabled {
 				continue
 			}
