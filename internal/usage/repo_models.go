@@ -13,79 +13,31 @@ import (
 // --- GORM ModelConfig helpers ---
 
 func modelConfigRowToGORM(row ModelConfigRow) ModelConfig {
-	return ModelConfig{
-		ModelID:               row.ModelID,
-		OwnedBy:               row.OwnedBy,
-		Description:           row.Description,
-		Enabled:               row.Enabled,
-		PricingMode:           row.PricingMode,
-		InputPricePerMillion:  row.InputPricePerMillion,
-		OutputPricePerMillion: row.OutputPricePerMillion,
-		CachedPricePerMillion: row.CachedPricePerMillion,
-		PricePerCall:          row.PricePerCall,
-		Source:                row.Source,
-		UpdatedAt:             row.UpdatedAt,
-	}
+	return ModelConfig(row)
 }
 
 func gormToModelConfigRow(m ModelConfig) ModelConfigRow {
-	return ModelConfigRow{
-		ModelID:               m.ModelID,
-		OwnedBy:               m.OwnedBy,
-		Description:           m.Description,
-		Enabled:               m.Enabled,
-		PricingMode:           m.PricingMode,
-		InputPricePerMillion:  m.InputPricePerMillion,
-		OutputPricePerMillion: m.OutputPricePerMillion,
-		CachedPricePerMillion: m.CachedPricePerMillion,
-		PricePerCall:          m.PricePerCall,
-		Source:                m.Source,
-		UpdatedAt:             m.UpdatedAt,
-	}
+	return ModelConfigRow(m)
 }
 
 // --- GORM ModelOwnerPreset helpers ---
 
 func modelOwnerPresetRowToGORM(row ModelOwnerPresetRow) ModelOwnerPreset {
-	return ModelOwnerPreset{
-		Value:       row.Value,
-		Label:       row.Label,
-		Description: row.Description,
-		Enabled:     row.Enabled,
-		UpdatedAt:   row.UpdatedAt,
-	}
+	return ModelOwnerPreset(row)
 }
 
 func gormToModelOwnerPresetRow(m ModelOwnerPreset) ModelOwnerPresetRow {
-	return ModelOwnerPresetRow{
-		Value:       m.Value,
-		Label:       m.Label,
-		Description: m.Description,
-		Enabled:     m.Enabled,
-		UpdatedAt:   m.UpdatedAt,
-	}
+	return ModelOwnerPresetRow(m)
 }
 
 // --- GORM ModelPricing helpers ---
 
 func modelPricingRowToGORM(row ModelPricingRow) ModelPricing {
-	return ModelPricing{
-		ModelID:               row.ModelID,
-		InputPricePerMillion:  row.InputPricePerMillion,
-		OutputPricePerMillion: row.OutputPricePerMillion,
-		CachedPricePerMillion: row.CachedPricePerMillion,
-		UpdatedAt:             row.UpdatedAt,
-	}
+	return ModelPricing(row)
 }
 
 func gormToModelPricingRow(m ModelPricing) ModelPricingRow {
-	return ModelPricingRow{
-		ModelID:               m.ModelID,
-		InputPricePerMillion:  m.InputPricePerMillion,
-		OutputPricePerMillion: m.OutputPricePerMillion,
-		CachedPricePerMillion: m.CachedPricePerMillion,
-		UpdatedAt:             m.UpdatedAt,
-	}
+	return ModelPricingRow(m)
 }
 
 // --- Gorm ModelConfig functions ---

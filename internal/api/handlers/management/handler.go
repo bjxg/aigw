@@ -352,8 +352,10 @@ func (h *Handler) persistRuntimeSetting(c *gin.Context, key string, value any) b
 		usage.CleanDBBackedConfigFromYAML(h.configFilePath)
 	}
 	// Reload runtime settings from DB so h.cfg reflects the latest state
-	usage.ApplyStoredRuntimeSettings(h.cfg)
-	if h != nil && h.authManager != nil {
+	if h.cfg != nil {
+		usage.ApplyStoredRuntimeSettings(h.cfg)
+	}
+	if h.authManager != nil {
 		h.authManager.SetConfig(h.cfg)
 	}
 	if h.onConfigChanged != nil {
