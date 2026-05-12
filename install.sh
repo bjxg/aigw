@@ -492,8 +492,6 @@ aigw_LANG=$(lang_tag)
 aigw_LANGUAGE=$(language_tag)
 aigw_PORT=${CFG_PORT}
 CLI_PROXY_CONFIG_PATH=${INSTALL_DIR}/config.yaml
-CLI_PROXY_AUTH_PATH=${INSTALL_DIR}/auths
-AUTH_PATH=/root/.cli-proxy-api
 CLI_PROXY_LOG_PATH=${INSTALL_DIR}/logs
 CLI_PROXY_DATA_PATH=${INSTALL_DIR}/data
 TZ=${TZ_VALUE}
@@ -512,13 +510,11 @@ services:
       - "${aigw_PORT}:${aigw_PORT}"
     volumes:
       - ${CLI_PROXY_CONFIG_PATH}:/CLIProxyAPI/config.yaml
-      - ${CLI_PROXY_AUTH_PATH}:${AUTH_PATH}
       - ${CLI_PROXY_LOG_PATH}:/CLIProxyAPI/logs
       - ${CLI_PROXY_DATA_PATH}:/CLIProxyAPI/data
     environment:
       TZ: ${TZ}
       aigw_LOCALE: ${aigw_LOCALE}
-      AUTH_PATH: ${AUTH_PATH}
       LANG: ${aigw_LANG}
       LANGUAGE: ${aigw_LANGUAGE}
       LC_ALL: ${aigw_LANG}
@@ -862,7 +858,7 @@ main() {
     check_docker
 
     step 3 "$(is_zh && echo "准备配置与部署元数据" || echo "Preparing configuration and deployment metadata")"
-    mkdir -p "${INSTALL_DIR}" "${INSTALL_DIR}/auths" "${INSTALL_DIR}/logs" "${INSTALL_DIR}/data"
+    mkdir -p "${INSTALL_DIR}" "${INSTALL_DIR}/logs" "${INSTALL_DIR}/data"
     if [[ "$is_update" == "true" ]]; then
         if is_zh; then
             success "保留现有配置: ${INSTALL_DIR}/config.yaml"
