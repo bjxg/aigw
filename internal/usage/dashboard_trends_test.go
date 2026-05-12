@@ -1,11 +1,23 @@
 package usage
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 )
+
+func initTestUsageDB(t *testing.T, cfg config.RequestLogStorageConfig) {
+	t.Helper()
+	CloseDB()
+	dbPath := filepath.Join(t.TempDir(), "usage.db")
+	if err := InitDB("sqlite", dbPath, cfg, time.UTC); err != nil {
+		t.Fatalf("InitDB() error = %v", err)
+	}
+	stopRequestLogMaintenance()
+	t.Cleanup(CloseDB)
+}
 
 func TestQueryDashboardTrendsReturnsFixedDailyBuckets(t *testing.T) {
 	initTestUsageDB(t, config.RequestLogStorageConfig{StoreContent: false})

@@ -407,45 +407,6 @@ func TestFileSynthesizer_Synthesize_PriorityParsing(t *testing.T) {
 	}
 }
 
-func TestFileSynthesizer_Synthesize_OAuthExcludedModelsMerged(t *testing.T) {
-	tempDir := t.TempDir()
-	authData := map[string]any{
-		"type":            "claude",
-		"excluded_models": []string{"custom-model", "MODEL-B"},
-	}
-	data, _ := json.Marshal(authData)
-	errWriteFile := os.WriteFile(filepath.Join(tempDir, "auth.json"), data, 0644)
-	if errWriteFile != nil {
-		t.Fatalf("failed to write auth file: %v", errWriteFile)
-	}
-
-	synth := NewFileSynthesizer()
-	ctx := &SynthesisContext{
-		Config: &config.Config{
-			OAuthExcludedModels: map[string][]string{
-				"claude": {"shared", "model-b"},
-			},
-		},
-		AuthDir:     tempDir,
-		Now:         time.Now(),
-		IDGenerator: NewStableIDGenerator(),
-	}
-
-	auths, errSynthesize := synth.Synthesize(ctx)
-	if errSynthesize != nil {
-		t.Fatalf("unexpected error: %v", errSynthesize)
-	}
-	if len(auths) != 1 {
-		t.Fatalf("expected 1 auth, got %d", len(auths))
-	}
-
-	got := auths[0].Attributes["excluded_models"]
-	want := "custom-model,model-b,shared"
-	if got != want {
-		t.Fatalf("expected excluded_models %q, got %q", want, got)
-	}
-}
-
 func TestSynthesizeGeminiVirtualAuths_NilInputs(t *testing.T) {
 	now := time.Now()
 

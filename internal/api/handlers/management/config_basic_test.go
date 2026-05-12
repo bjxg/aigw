@@ -124,14 +124,6 @@ func TestSanitizeConfigForAPI(t *testing.T) {
 				ExcludedModels: []string{"minimax-m2.5"},
 			},
 		},
-		OAuthModelAlias: map[string][]config.OAuthModelAlias{
-			"antigravity": {
-				{Name: "rev19-uic3-1p", Alias: "gemini-2.5-computer-use-preview"},
-			},
-		},
-		OAuthExcludedModels: map[string][]string{
-			"anthropic": {"claude-old-model"},
-		},
 		AmpCode: config.AmpCode{
 			UpstreamURL:    "https://amp.example.com/api",
 			UpstreamAPIKey: "sk-ampXXXX1234000000",
@@ -212,16 +204,6 @@ func TestSanitizeConfigForAPI(t *testing.T) {
 		}
 	}
 
-	// ── Verify OAuthModelAlias is stripped ──
-	if sanitized.OAuthModelAlias != nil {
-		t.Error("OAuthModelAlias not cleared")
-	}
-
-	// ── Verify OAuthExcludedModels is stripped ──
-	if sanitized.OAuthExcludedModels != nil {
-		t.Error("OAuthExcludedModels not cleared")
-	}
-
 	// ── Verify Provider ExcludedModels are stripped ──
 	for _, g := range sanitized.GeminiKey {
 		if g.ExcludedModels != nil {
@@ -284,9 +266,6 @@ func TestSanitizeConfigForAPI(t *testing.T) {
 	}
 	if cfg.APIKeyEntries[0].Name != "管理员" {
 		t.Error("original config was mutated: APIKeyEntries[0].Name")
-	}
-	if cfg.OAuthModelAlias == nil {
-		t.Error("original config was mutated: OAuthModelAlias")
 	}
 }
 

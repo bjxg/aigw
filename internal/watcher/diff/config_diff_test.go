@@ -25,9 +25,6 @@ func TestBuildConfigChangeDetails(t *testing.T) {
 			DisableControlPanel:   false,
 			PanelGitHubRepository: "repo-old",
 		},
-		OAuthExcludedModels: map[string][]string{
-			"providerA": {"m1"},
-		},
 		OpenAICompatibility: []config.OpenAICompatibility{
 			{
 				Name: "compat-a",
@@ -59,10 +56,6 @@ func TestBuildConfigChangeDetails(t *testing.T) {
 			DisableControlPanel:   true,
 			PanelGitHubRepository: "repo-new",
 		},
-		OAuthExcludedModels: map[string][]string{
-			"providerA": {"m1", "m2"},
-			"providerB": {"x"},
-		},
 		OpenAICompatibility: []config.OpenAICompatibility{
 			{
 				Name: "compat-a",
@@ -89,8 +82,6 @@ func TestBuildConfigChangeDetails(t *testing.T) {
 	expectContains(t, details, "ampcode.model-mappings: updated (1 -> 2 entries)")
 	expectContains(t, details, "remote-management.allow-remote: false -> true")
 	expectContains(t, details, "remote-management.secret-key: updated")
-	expectContains(t, details, "oauth-excluded-models[providera]: updated (1 -> 2 entries)")
-	expectContains(t, details, "oauth-excluded-models[providerb]: added (1 entries)")
 	expectContains(t, details, "openai-compatibility:")
 	expectContains(t, details, "  provider added: compat-b (api-keys=1, models=0)")
 	expectContains(t, details, "  provider updated: compat-a (models 1 -> 2)")
@@ -342,7 +333,6 @@ func TestBuildConfigChangeDetails_AllBranches(t *testing.T) {
 			ProxyURL:   "http://old-proxy",
 			APIKeys:    []string{" keyA "},
 		},
-		OAuthExcludedModels: map[string][]string{"p1": {"a"}},
 		OpenAICompatibility: []config.OpenAICompatibility{
 			{
 				Name: "prov-old",
@@ -394,7 +384,6 @@ func TestBuildConfigChangeDetails_AllBranches(t *testing.T) {
 			ProxyURL:   "http://new-proxy",
 			APIKeys:    []string{"keyB"},
 		},
-		OAuthExcludedModels: map[string][]string{"p1": {"b", "c"}, "p2": {"d"}},
 		OpenAICompatibility: []config.OpenAICompatibility{
 			{
 				Name: "prov-old",
@@ -450,8 +439,6 @@ func TestBuildConfigChangeDetails_AllBranches(t *testing.T) {
 	expectContains(t, changes, "ampcode.restrict-management-to-localhost: false -> true")
 	expectContains(t, changes, "ampcode.model-mappings: updated (1 -> 1 entries)")
 	expectContains(t, changes, "ampcode.force-model-mappings: false -> true")
-	expectContains(t, changes, "oauth-excluded-models[p1]: updated (1 -> 2 entries)")
-	expectContains(t, changes, "oauth-excluded-models[p2]: added (1 entries)")
 	expectContains(t, changes, "remote-management.allow-remote: false -> true")
 	expectContains(t, changes, "remote-management.disable-control-panel: false -> true")
 	expectContains(t, changes, "remote-management.panel-github-repository: old/repo -> new/repo")
