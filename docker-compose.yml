@@ -16,7 +16,6 @@ services:
     container_name: aigw
     environment:
       aigw_LOCALE: ${aigw_LOCALE:-zh}
-      AUTH_PATH: ${AUTH_PATH:-/root/.cli-proxy-api}
       LANG: ${aigw_LANG:-C.UTF-8}
       LANGUAGE: ${aigw_LANGUAGE:-en_US:en}
       LC_ALL: ${aigw_LANG:-C.UTF-8}
@@ -29,7 +28,6 @@ services:
       - "127.0.0.1:11451:11451"
     volumes:
       - ${CLI_PROXY_CONFIG_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/config.yaml}:/CLIProxyAPI/config.yaml
-      - ${CLI_PROXY_AUTH_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/auths}:${AUTH_PATH:-/root/.cli-proxy-api}
       - ${CLI_PROXY_LOG_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/logs}:/CLIProxyAPI/logs
       - ${CLI_PROXY_DATA_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/data}:/CLIProxyAPI/data
     restart: unless-stopped

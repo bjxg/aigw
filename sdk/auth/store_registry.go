@@ -21,15 +21,6 @@ func RegisterTokenStore(store coreauth.Store) {
 // GetTokenStore returns the globally registered token store.
 func GetTokenStore() coreauth.Store {
 	storeMu.RLock()
-	s := registeredStore
-	storeMu.RUnlock()
-	if s != nil {
-		return s
-	}
-	storeMu.Lock()
-	defer storeMu.Unlock()
-	if registeredStore == nil {
-		registeredStore = NewFileTokenStore()
-	}
+	defer storeMu.RUnlock()
 	return registeredStore
 }

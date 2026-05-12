@@ -3,7 +3,6 @@ package watcher
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -110,25 +109,8 @@ func TestMatchProvider(t *testing.T) {
 	}
 }
 
-func TestSnapshotCoreAuths_ConfigAndAuthFiles(t *testing.T) {
-	authDir := t.TempDir()
-	metadata := map[string]any{
-		"type":       "gemini",
-		"email":      "user@example.com",
-		"project_id": "proj-a, proj-b",
-		"proxy_url":  "https://proxy",
-	}
-	authFile := filepath.Join(authDir, "gemini.json")
-	data, err := json.Marshal(metadata)
-	if err != nil {
-		t.Fatalf("failed to marshal metadata: %v", err)
-	}
-	if err = os.WriteFile(authFile, data, 0o644); err != nil {
-		t.Fatalf("failed to write auth file: %v", err)
-	}
-
+func TestSnapshotCoreAuths_ConfigOnly(t *testing.T) {
 	cfg := &config.Config{
-		AuthDir: authDir,
 		GeminiKey: []config.GeminiKey{
 			{
 				APIKey:         "g-key",
@@ -139,29 +121,17 @@ func TestSnapshotCoreAuths_ConfigAndAuthFiles(t *testing.T) {
 		},
 	}
 
-	w := &Watcher{authDir: authDir}
+	w := &Watcher{}
 	w.SetConfig(cfg)
 
 	auths := w.SnapshotCoreAuths()
-	if len(auths) != 4 {
-		t.Fatalf("expected 4 auth entries (1 config + 1 primary + 2 virtual), got %d", len(auths))
+	if len(auths) != 1 {
+		t.Fatalf("expected 1 auth entry from config, got %d", len(auths))
 	}
 
-	var geminiAPIKeyAuth *coreauth.Auth
-	var geminiPrimary *coreauth.Auth
-	virtuals := make([]*coreauth.Auth, 0)
-	for _, a := range auths {
-		switch {
-		case a.Provider == "gemini" && a.Attributes["api_key"] == "g-key":
-			geminiAPIKeyAuth = a
-		case a.Attributes["gemini_virtual_primary"] == "true":
-			geminiPrimary = a
-		case strings.TrimSpace(a.Attributes["gemini_virtual_parent"]) != "":
-			virtuals = append(virtuals, a)
-		}
-	}
-	if geminiAPIKeyAuth == nil {
-		t.Fatal("expected synthesized Gemini API key auth")
+	geminiAPIKeyAuth := auths[0]
+	if geminiAPIKeyAuth.Provider != "gemini" || geminiAPIKeyAuth.Attributes["api_key"] != "g-key" {
+		t.Fatalf("expected synthesized Gemini API key auth, got provider=%s", geminiAPIKeyAuth.Provider)
 	}
 	expectedAPIKeyHash := diff.ComputeExcludedModelsHash([]string{"Model-A", "model-b"})
 	if geminiAPIKeyAuth.Attributes["excluded_models_hash"] != expectedAPIKeyHash {
@@ -169,28 +139,6 @@ func TestSnapshotCoreAuths_ConfigAndAuthFiles(t *testing.T) {
 	}
 	if geminiAPIKeyAuth.Attributes["auth_kind"] != "apikey" {
 		t.Fatalf("expected auth_kind=apikey, got %s", geminiAPIKeyAuth.Attributes["auth_kind"])
-	}
-
-	if geminiPrimary == nil {
-		t.Fatal("expected primary gemini-cli auth from file")
-	}
-	if !geminiPrimary.Disabled || geminiPrimary.Status != coreauth.StatusDisabled {
-		t.Fatal("expected primary gemini-cli auth to be disabled when virtual auths are synthesized")
-	}
-	if geminiPrimary.Attributes["auth_kind"] != "oauth" {
-		t.Fatalf("expected auth_kind=oauth, got %s", geminiPrimary.Attributes["auth_kind"])
-	}
-
-	if len(virtuals) != 2 {
-		t.Fatalf("expected 2 virtual auths, got %d", len(virtuals))
-	}
-	for _, v := range virtuals {
-		if v.Attributes["gemini_virtual_parent"] != geminiPrimary.ID {
-			t.Fatalf("virtual auth missing parent link to %s", geminiPrimary.ID)
-		}
-		if v.Status != coreauth.StatusActive {
-			t.Fatalf("expected virtual auth to be active, got %s", v.Status)
-		}
 	}
 }
 
@@ -501,22 +449,16 @@ func TestAuthFileUnchangedEmptyAndMissing(t *testing.T) {
 }
 
 func TestReloadClientsCachesAuthHashes(t *testing.T) {
-	tmpDir := t.TempDir()
-	authFile := filepath.Join(tmpDir, "one.json")
-	if err := os.WriteFile(authFile, []byte(`{"type":"demo"}`), 0o644); err != nil {
-		t.Fatalf("failed to write auth file: %v", err)
-	}
 	w := &Watcher{
-		authDir: tmpDir,
-		config:  &config.Config{AuthDir: tmpDir},
+		config: &config.Config{},
 	}
 
 	w.reloadClients(true, nil, false)
 
 	w.clientsMutex.RLock()
 	defer w.clientsMutex.RUnlock()
-	if len(w.lastAuthHashes) != 1 {
-		t.Fatalf("expected hash cache for one auth file, got %d", len(w.lastAuthHashes))
+	if len(w.lastAuthHashes) != 0 {
+		t.Fatalf("expected no hash cache after removing file auth walk, got %d", len(w.lastAuthHashes))
 	}
 }
 
@@ -1084,27 +1026,6 @@ func TestAddOrUpdateClientEdgeCases(t *testing.T) {
 	w.addOrUpdateClient(authFile) // config nil -> should not panic or update
 	if len(w.lastAuthHashes) != 0 {
 		t.Fatalf("expected no hash entries without config, got %d", len(w.lastAuthHashes))
-	}
-}
-
-func TestLoadFileClientsWalkError(t *testing.T) {
-	tmpDir := t.TempDir()
-	noAccessDir := filepath.Join(tmpDir, "0noaccess")
-	if err := os.MkdirAll(noAccessDir, 0o755); err != nil {
-		t.Fatalf("failed to create noaccess dir: %v", err)
-	}
-	if err := os.Chmod(noAccessDir, 0); err != nil {
-		t.Skipf("chmod not supported: %v", err)
-	}
-	defer func() { _ = os.Chmod(noAccessDir, 0o755) }()
-
-	cfg := &config.Config{AuthDir: tmpDir}
-	w := &Watcher{}
-	w.SetConfig(cfg)
-
-	count := w.loadFileClients(cfg)
-	if count != 0 {
-		t.Fatalf("expected count 0 due to walk error, got %d", count)
 	}
 }
 

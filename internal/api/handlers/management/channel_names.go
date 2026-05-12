@@ -156,45 +156,6 @@ func collectKnownChannelsWithPolicy(cfg *config.Config, auths []*coreauth.Auth, 
 		}
 	}
 
-	for _, auth := range auths {
-		if auth == nil {
-			continue
-		}
-		if excludeAuthID != "" && strings.EqualFold(strings.TrimSpace(auth.ID), strings.TrimSpace(excludeAuthID)) {
-			continue
-		}
-		accountType, _ := auth.AccountInfo()
-		if !strings.EqualFold(accountType, "oauth") {
-			continue
-		}
-		canonical := auth.ChannelName()
-		if err := addKnownChannelWithPolicy(known, canonical, canonical, "OAuth auth file", failOnConflict); err != nil {
-			return nil, err
-		}
-	}
-
-	for _, auth := range auths {
-		if auth == nil {
-			continue
-		}
-		if excludeAuthID != "" && strings.EqualFold(strings.TrimSpace(auth.ID), strings.TrimSpace(excludeAuthID)) {
-			continue
-		}
-		accountType, _ := auth.AccountInfo()
-		if !strings.EqualFold(accountType, "oauth") {
-			continue
-		}
-		canonical := strings.TrimSpace(auth.ChannelName())
-		for _, identifier := range auth.ChannelIdentifiers() {
-			if strings.EqualFold(strings.TrimSpace(identifier), canonical) {
-				continue
-			}
-			if err := addKnownChannelWithPolicy(known, identifier, canonical, "OAuth auth file", false); err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	return known, nil
 }
 

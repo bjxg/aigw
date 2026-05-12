@@ -25,7 +25,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/store"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v6/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
@@ -229,8 +228,7 @@ func main() {
 		configFilePath = pgStoreInst.ConfigPath()
 		cfg, err = config.LoadConfigOptional(configFilePath, isCloudDeploy)
 		if err == nil {
-			cfg.AuthDir = pgStoreInst.AuthDir()
-			log.Infof("postgres-backed token store enabled, workspace path: %s", pgStoreInst.WorkDir())
+			log.Infof("postgres-backed config store enabled, workspace path: %s", pgStoreInst.WorkDir())
 		}
 	} else if useObjectStore {
 		if objectStoreLocalPath == "" {
@@ -296,8 +294,7 @@ func main() {
 			if cfg == nil {
 				cfg = &config.Config{}
 			}
-			cfg.AuthDir = objectStoreInst.AuthDir()
-			log.Infof("object-backed token store enabled, bucket: %s", objectStoreBucket)
+			log.Infof("object-backed config store enabled, bucket: %s", objectStoreBucket)
 		}
 	} else if useGitStore {
 		if gitStoreLocalPath == "" {
@@ -308,9 +305,8 @@ func main() {
 			}
 		}
 		gitStoreRoot = filepath.Join(gitStoreLocalPath, "gitstore")
-		authDir := filepath.Join(gitStoreRoot, "auths")
 		gitStoreInst = store.NewGitTokenStore(gitStoreRemoteURL, gitStoreUser, gitStorePassword)
-		gitStoreInst.SetBaseDir(authDir)
+		gitStoreInst.SetBaseDir(gitStoreRoot)
 		if errRepo := gitStoreInst.EnsureRepository(); errRepo != nil {
 			log.Errorf("failed to prepare git token store: %v", errRepo)
 			return
@@ -340,8 +336,7 @@ func main() {
 		}
 		cfg, err = config.LoadConfigOptional(configFilePath, isCloudDeploy)
 		if err == nil {
-			cfg.AuthDir = gitStoreInst.AuthDir()
-			log.Infof("git-backed token store enabled, repository path: %s", gitStoreRoot)
+			log.Infof("git-backed config store enabled, repository path: %s", gitStoreRoot)
 		}
 	} else if configPath != "" {
 		configFilePath = configPath
@@ -396,23 +391,7 @@ func main() {
 	// Set the log level based on the configuration.
 	util.SetLogLevel(cfg)
 
-	if resolvedAuthDir, errResolveAuthDir := util.ResolveAuthDir(cfg.AuthDir); errResolveAuthDir != nil {
-		log.Errorf("failed to resolve auth directory: %v", errResolveAuthDir)
-		return
-	} else {
-		cfg.AuthDir = resolvedAuthDir
-	}
-
-	// Register the shared token store once so all components use the same persistence backend.
-	if usePostgresStore {
-		sdkAuth.RegisterTokenStore(pgStoreInst)
-	} else if useObjectStore {
-		sdkAuth.RegisterTokenStore(objectStoreInst)
-	} else if useGitStore {
-		sdkAuth.RegisterTokenStore(gitStoreInst)
-	} else {
-		sdkAuth.RegisterTokenStore(sdkAuth.NewFileTokenStore())
-	}
+	// Register built-in access providers before constructing services.
 
 	// Register built-in access providers before constructing services.
 	configaccess.Register(&cfg.SDKConfig)
