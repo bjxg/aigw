@@ -207,9 +207,7 @@ func (s *FileTokenStore) readAuthFile(path, baseDir string) (*cliproxyauth.Auth,
 					}
 				}
 			}
-			if accessToken != "" {
-				// Antigravity OAuth project ID fetching removed
-			}
+			_ = accessToken // Antigravity OAuth project ID fetching removed
 		}
 	}
 	info, err := os.Stat(path)
