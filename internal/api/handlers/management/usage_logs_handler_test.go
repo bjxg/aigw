@@ -228,7 +228,7 @@ func TestGetUsageLogs_EmptyDB_DoesNotReturnNullSlices(t *testing.T) {
 	var payload struct {
 		Items   []any `json:"items"`
 		Filters struct {
-			APIKeys  []any   `json:"api_keys"`
+			APIKeys  []any    `json:"api_keys"`
 			Models   []string `json:"models"`
 			Channels []string `json:"channels"`
 		} `json:"filters"`

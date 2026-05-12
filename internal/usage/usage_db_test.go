@@ -453,9 +453,9 @@ func TestCleanupExpiredLogContentSkipsWhenStorageDisabledOrRetentionUnlimited(t 
 	// - "storage disabled": content is now always stored, cleanup proceeds normally
 	// - "retention unlimited": cleanup is skipped (no expiration)
 	testCases := []struct {
-		name                string
-		cfg                 config.RequestLogStorageConfig
-		expectSkipCleanup   bool
+		name              string
+		cfg               config.RequestLogStorageConfig
+		expectSkipCleanup bool
 	}{
 		{
 			name: "retention unlimited",

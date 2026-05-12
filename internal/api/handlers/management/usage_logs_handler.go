@@ -240,11 +240,11 @@ func (h *Handler) buildNameMaps() (keyNameMap, channelNameMap, authIndexChannelM
 					channelNameMap[source] = channel
 				}
 			}
-		if auth.Attributes != nil {
-			if email := strings.TrimSpace(auth.Attributes["email"]); email != "" {
-				channelNameMap[email] = channel
+			if auth.Attributes != nil {
+				if email := strings.TrimSpace(auth.Attributes["email"]); email != "" {
+					channelNameMap[email] = channel
+				}
 			}
-		}
 		}
 	}
 
@@ -663,5 +663,3 @@ func (h *Handler) GetEntityUsageStats(c *gin.Context) {
 		"auth_index": authIndexStats,
 	})
 }
-
-
