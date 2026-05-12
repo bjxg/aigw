@@ -16,7 +16,7 @@ func modelConfigRowToGORM(row ModelConfigRow) ModelConfig {
 	return ModelConfig{
 		ModelID:               row.ModelID,
 		OwnedBy:               row.OwnedBy,
-		Description:            row.Description,
+		Description:           row.Description,
 		Enabled:               row.Enabled,
 		PricingMode:           row.PricingMode,
 		InputPricePerMillion:  row.InputPricePerMillion,

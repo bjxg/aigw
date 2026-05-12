@@ -153,5 +153,3 @@ func renameSQLiteAPIKeyChannels(oldNameSet map[string]struct{}, newName string) 
 	}
 	return nil
 }
-
-

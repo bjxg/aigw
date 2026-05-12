@@ -88,16 +88,16 @@ func (h *OpenAIImagesAPIHandler) executeImages(c *gin.Context, rawJSON []byte, a
 				return
 			}
 		}
-	resp, err := h.AuthManager.Execute(cliCtx, []string{"codex"}, coreexecutor.Request{
-		Model:   "",
-		Payload: execPayload,
-		Format:  "openai",
-	}, coreexecutor.Options{
-		Alt:             alt,
-		OriginalRequest: rawJSON,
-		SourceFormat:    "openai",
-		Metadata:        cloneImageExecutionMetadata(meta),
-	})
+		resp, err := h.AuthManager.Execute(cliCtx, []string{"codex"}, coreexecutor.Request{
+			Model:   "",
+			Payload: execPayload,
+			Format:  "openai",
+		}, coreexecutor.Options{
+			Alt:             alt,
+			OriginalRequest: rawJSON,
+			SourceFormat:    "openai",
+			Metadata:        cloneImageExecutionMetadata(meta),
+		})
 		if err != nil {
 			status := http.StatusBadGateway
 			if statusErr, ok := err.(coreexecutor.StatusError); ok && statusErr.StatusCode() > 0 {

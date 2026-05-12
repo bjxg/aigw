@@ -709,7 +709,7 @@ func (r *gormLogRepo) QueryHourlySeries(ctx context.Context, apiKeyID int64, hou
 	// Token aggregation by hour
 	hourExpr := dateTruncSQL("timestamp", "hour")
 	var tokens []HourlyTokenPoint
-	err := query.Select(hourExpr+" as hour, COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(reasoning_tokens),0), COALESCE(SUM(cached_tokens),0), COALESCE(SUM(total_tokens),0)").
+	err := query.Select(hourExpr + " as hour, COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(reasoning_tokens),0), COALESCE(SUM(cached_tokens),0), COALESCE(SUM(total_tokens),0)").
 		Group("hour").
 		Order("hour").
 		Find(&tokens).Error
@@ -719,7 +719,7 @@ func (r *gormLogRepo) QueryHourlySeries(ctx context.Context, apiKeyID int64, hou
 
 	// Model counts by hour
 	var models []HourlyModelPoint
-	err = query.Select(hourExpr+" as hour, model, COUNT(*) as requests").
+	err = query.Select(hourExpr + " as hour, model, COUNT(*) as requests").
 		Where("model != ''").
 		Group("hour, model").
 		Order("hour").
