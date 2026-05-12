@@ -43,18 +43,10 @@ func TestApplyAuthExcludedModelsMeta_OAuthProvider(t *testing.T) {
 		Provider:   "TestProv",
 		Attributes: map[string]string{},
 	}
-	cfg := &config.Config{
-		OAuthExcludedModels: map[string][]string{
-			"testprov": {"A", "b"},
-		},
-	}
+	cfg := &config.Config{}
 
 	synthesizer.ApplyAuthExcludedModelsMeta(auth, cfg, nil, "oauth")
 
-	expected := diff.ComputeExcludedModelsHash([]string{"a", "b"})
-	if got := auth.Attributes["excluded_models_hash"]; got != expected {
-		t.Fatalf("expected hash %s, got %s", expected, got)
-	}
 	if got := auth.Attributes["auth_kind"]; got != "oauth" {
 		t.Fatalf("expected auth_kind=oauth, got %s", got)
 	}
@@ -145,9 +137,6 @@ func TestSnapshotCoreAuths_ConfigAndAuthFiles(t *testing.T) {
 				Headers:        map[string]string{"X-Req": "1"},
 			},
 		},
-		OAuthExcludedModels: map[string][]string{
-			"gemini-cli": {"Foo", "bar"},
-		},
 	}
 
 	w := &Watcher{authDir: authDir}
@@ -188,10 +177,6 @@ func TestSnapshotCoreAuths_ConfigAndAuthFiles(t *testing.T) {
 	if !geminiPrimary.Disabled || geminiPrimary.Status != coreauth.StatusDisabled {
 		t.Fatal("expected primary gemini-cli auth to be disabled when virtual auths are synthesized")
 	}
-	expectedOAuthHash := diff.ComputeExcludedModelsHash([]string{"Foo", "bar"})
-	if geminiPrimary.Attributes["excluded_models_hash"] != expectedOAuthHash {
-		t.Fatalf("expected OAuth excluded hash %s, got %s", expectedOAuthHash, geminiPrimary.Attributes["excluded_models_hash"])
-	}
 	if geminiPrimary.Attributes["auth_kind"] != "oauth" {
 		t.Fatalf("expected auth_kind=oauth, got %s", geminiPrimary.Attributes["auth_kind"])
 	}
@@ -202,9 +187,6 @@ func TestSnapshotCoreAuths_ConfigAndAuthFiles(t *testing.T) {
 	for _, v := range virtuals {
 		if v.Attributes["gemini_virtual_parent"] != geminiPrimary.ID {
 			t.Fatalf("virtual auth missing parent link to %s", geminiPrimary.ID)
-		}
-		if v.Attributes["excluded_models_hash"] != expectedOAuthHash {
-			t.Fatalf("expected virtual excluded hash %s, got %s", expectedOAuthHash, v.Attributes["excluded_models_hash"])
 		}
 		if v.Status != coreauth.StatusActive {
 			t.Fatalf("expected virtual auth to be active, got %s", v.Status)
@@ -1175,72 +1157,6 @@ func TestReloadConfigUsesMirroredAuthDir(t *testing.T) {
 	defer w.clientsMutex.RUnlock()
 	if w.config == nil || w.config.AuthDir != authDir {
 		t.Fatalf("expected AuthDir to be overridden by mirroredAuthDir %s, got %+v", authDir, w.config)
-	}
-}
-
-func TestReloadConfigFiltersAffectedOAuthProviders(t *testing.T) {
-	tmpDir := t.TempDir()
-	authDir := filepath.Join(tmpDir, "auth")
-	if err := os.MkdirAll(authDir, 0o755); err != nil {
-		t.Fatalf("failed to create auth dir: %v", err)
-	}
-	configPath := filepath.Join(tmpDir, "config.yaml")
-
-	// Ensure SnapshotCoreAuths yields a provider that is NOT affected, so we can assert it survives.
-	if err := os.WriteFile(filepath.Join(authDir, "provider-b.json"), []byte(`{"type":"provider-b","email":"b@example.com"}`), 0o644); err != nil {
-		t.Fatalf("failed to write auth file: %v", err)
-	}
-
-	oldCfg := &config.Config{
-		AuthDir: authDir,
-		OAuthExcludedModels: map[string][]string{
-			"provider-a": {"m1"},
-		},
-	}
-	newCfg := &config.Config{
-		AuthDir: authDir,
-		OAuthExcludedModels: map[string][]string{
-			"provider-a": {"m2"},
-		},
-	}
-	data, err := yaml.Marshal(newCfg)
-	if err != nil {
-		t.Fatalf("failed to marshal config: %v", err)
-	}
-	if err = os.WriteFile(configPath, data, 0o644); err != nil {
-		t.Fatalf("failed to write config: %v", err)
-	}
-
-	w := &Watcher{
-		configPath:     configPath,
-		authDir:        authDir,
-		lastAuthHashes: make(map[string]string),
-		currentAuths: map[string]*coreauth.Auth{
-			"a": {ID: "a", Provider: "provider-a"},
-		},
-	}
-	w.SetConfig(oldCfg)
-
-	if ok := w.reloadConfig(); !ok {
-		t.Fatal("expected reloadConfig to succeed")
-	}
-
-	w.clientsMutex.RLock()
-	defer w.clientsMutex.RUnlock()
-	for _, auth := range w.currentAuths {
-		if auth != nil && auth.Provider == "provider-a" {
-			t.Fatal("expected affected provider auth to be filtered")
-		}
-	}
-	foundB := false
-	for _, auth := range w.currentAuths {
-		if auth != nil && auth.Provider == "provider-b" {
-			foundB = true
-			break
-		}
-	}
-	if !foundB {
-		t.Fatal("expected unaffected provider auth to remain")
 	}
 }
 

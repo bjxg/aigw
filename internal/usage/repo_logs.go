@@ -893,15 +893,7 @@ func applyLogFilters(query *gorm.DB, params LogQueryParams) *gorm.DB {
 		query = query.Where("failed = true")
 	}
 
-	if len(params.AuthIndexes) > 0 || len(params.ChannelNames) > 0 {
-		filterConditions := buildGormFilterConditionOr(query, params)
-
-		if len(filterConditions) > 0 {
-			query = query.Where(strings.Join(filterConditions, " OR "))
-		} else {
-			query = query.Where("1 = 0")
-		}
-	}
+	query = applyAuthIndexAndChannelFilters(query, params)
 
 	return query
 }
@@ -916,20 +908,27 @@ func applyTimeAndAPIKeyFilter(query *gorm.DB, apiKeyID int64, days int) *gorm.DB
 	return query
 }
 
-// buildGormFilterConditionOr builds OR conditions for auth_indexes and channel_names.
-// It applies the IN clauses directly to the query and returns the SQL condition strings.
-func buildGormFilterConditionOr(query *gorm.DB, params LogQueryParams) []string {
-	var filterConditions []string
+// applyAuthIndexAndChannelFilters applies auth_index and channel_name filters with
+// proper parameter binding for IN clauses.
+func applyAuthIndexAndChannelFilters(query *gorm.DB, params LogQueryParams) *gorm.DB {
+	var conditions []string
+	var args []any
 
 	if len(params.AuthIndexes) > 0 {
-		filterConditions = append(filterConditions, "(auth_index IN ? AND trim(coalesce(channel_name, '')) = '')")
+		conditions = append(conditions, "(auth_index IN ? AND trim(coalesce(channel_name, '')) = '')")
+		args = append(args, params.AuthIndexes)
 	}
 
 	if len(params.ChannelNames) > 0 {
-		filterConditions = append(filterConditions, "lower(trim(channel_name)) IN ?")
+		conditions = append(conditions, "lower(trim(channel_name)) IN ?")
+		args = append(args, params.ChannelNames)
 	}
 
-	return filterConditions
+	if len(conditions) == 0 {
+		return query
+	}
+
+	return query.Where(strings.Join(conditions, " OR "), args...)
 }
 
 // --- GORM-based implementations of package-level functions ---

@@ -19,6 +19,25 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 )
 
+type testMemoryStore struct {
+	auths []*coreauth.Auth
+}
+
+func (s *testMemoryStore) List(context.Context) ([]*coreauth.Auth, error) { return s.auths, nil }
+func (s *testMemoryStore) Save(_ context.Context, auth *coreauth.Auth) (string, error) {
+	s.auths = append(s.auths, auth)
+	return auth.ID, nil
+}
+func (s *testMemoryStore) Delete(_ context.Context, id string) error {
+	for i, a := range s.auths {
+		if a.ID == id {
+			s.auths = append(s.auths[:i], s.auths[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
 func TestGetUsageLogsResolvesLegacySourceChannelName(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -34,7 +53,7 @@ func TestGetUsageLogsResolvesLegacySourceChannelName(t *testing.T) {
 		_ = os.Remove(dbPath + "-shm")
 	})
 
-	store := &memoryAuthStore{}
+	store := &testMemoryStore{}
 	manager := coreauth.NewManager(store, nil, nil)
 	auth, err := manager.Register(context.Background(), &coreauth.Auth{
 		ID:       "oauth-auth-logs",
@@ -51,7 +70,7 @@ func TestGetUsageLogsResolvesLegacySourceChannelName(t *testing.T) {
 	}
 
 	usage.InsertLog(
-		"", "", "gpt-5.4", "pcamtu927@gmail.com", "pcamtu927@gmail.com", auth.Index,
+		0, "", "gpt-5.4", "pcamtu927@gmail.com", "pcamtu927@gmail.com", auth.Index,
 		false, time.Now().UTC(), 123, 45,
 		usage.TokenStats{InputTokens: 1, OutputTokens: 2, TotalTokens: 3},
 		"", "",
@@ -111,7 +130,7 @@ func TestGetUsageLogsKeepsStoredChannelNameWhenCurrentAuthNameDiffers(t *testing
 		_ = os.Remove(dbPath + "-shm")
 	})
 
-	store := &memoryAuthStore{}
+	store := &testMemoryStore{}
 	manager := coreauth.NewManager(store, nil, nil)
 	auth, err := manager.Register(context.Background(), &coreauth.Auth{
 		ID:       "tabcode-auth",
@@ -125,7 +144,7 @@ func TestGetUsageLogsKeepsStoredChannelNameWhenCurrentAuthNameDiffers(t *testing
 	}
 
 	usage.InsertLog(
-		"", "", "gpt-5.4", "tabcode-plus", "tabcode-plus", auth.Index,
+		0, "", "gpt-5.4", "tabcode-plus", "tabcode-plus", auth.Index,
 		false, time.Now().UTC(), 123, 45,
 		usage.TokenStats{InputTokens: 1, OutputTokens: 2, TotalTokens: 3},
 		"", "",
@@ -272,7 +291,7 @@ func TestGetLogContent_ReturnsRequestDetailsPart(t *testing.T) {
 
 	details := `{"client":{"headers":{"Authorization":"Bearer sk-client-plaintext"}},"upstream":{"headers":{"Authorization":"Bearer sk-upstream-plaintext"}},"response":{"headers":{"X-Request-Id":"req-plaintext"}}}`
 	usage.InsertLogWithDetails(
-		"sk-test", "Primary", "gpt-test", "codex", "Codex", "auth-1",
+		0, "Primary", "gpt-test", "codex", "Codex", "auth-1",
 		false, time.Now().UTC(), 100, 10,
 		usage.TokenStats{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
 		`{"messages":[]}`, `{"choices":[]}`, details,

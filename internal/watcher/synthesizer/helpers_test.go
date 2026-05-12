@@ -134,14 +134,10 @@ func TestApplyAuthExcludedModelsMeta(t *testing.T) {
 				Provider:   "claude",
 				Attributes: make(map[string]string),
 			},
-			cfg: &config.Config{
-				OAuthExcludedModels: map[string][]string{
-					"claude": {"claude-2.0"},
-				},
-			},
+			cfg:      &config.Config{},
 			perKey:   nil,
 			authKind: "oauth",
-			wantHash: true,
+			wantHash: false,
 			wantKind: "oauth",
 		},
 		{
@@ -206,20 +202,16 @@ func TestApplyAuthExcludedModelsMeta_OAuthMergeWritesCombinedModels(t *testing.T
 		Provider:   "claude",
 		Attributes: make(map[string]string),
 	}
-	cfg := &config.Config{
-		OAuthExcludedModels: map[string][]string{
-			"claude": {"global-a", "shared"},
-		},
-	}
+	cfg := &config.Config{}
 
 	ApplyAuthExcludedModelsMeta(auth, cfg, []string{"per", "SHARED"}, "oauth")
 
-	const wantCombined = "global-a,per,shared"
+	const wantCombined = "per,shared"
 	if gotCombined := auth.Attributes["excluded_models"]; gotCombined != wantCombined {
 		t.Fatalf("expected excluded_models=%q, got %q", wantCombined, gotCombined)
 	}
 
-	expectedHash := diff.ComputeExcludedModelsHash([]string{"global-a", "per", "shared"})
+	expectedHash := diff.ComputeExcludedModelsHash([]string{"per", "shared"})
 	if gotHash := auth.Attributes["excluded_models_hash"]; gotHash != expectedHash {
 		t.Fatalf("expected excluded_models_hash=%q, got %q", expectedHash, gotHash)
 	}

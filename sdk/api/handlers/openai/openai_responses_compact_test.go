@@ -27,7 +27,7 @@ func (e *compactCaptureExecutor) Identifier() string { return "test-provider" }
 func (e *compactCaptureExecutor) Execute(ctx context.Context, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options) (coreexecutor.Response, error) {
 	e.calls++
 	e.alt = opts.Alt
-	e.sourceFormat = opts.SourceFormat.String()
+	e.sourceFormat = string(opts.SourceFormat)
 	return coreexecutor.Response{Payload: []byte(`{"ok":true}`)}, nil
 }
 
