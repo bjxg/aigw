@@ -29,14 +29,14 @@ func (e *responsesCaptureExecutor) Identifier() string { return "codex" }
 func (e *responsesCaptureExecutor) Execute(_ context.Context, _ *coreauth.Auth, _ coreexecutor.Request, opts coreexecutor.Options) (coreexecutor.Response, error) {
 	e.calls++
 	e.alt = opts.Alt
-	e.sourceFormat = opts.SourceFormat.String()
+	e.sourceFormat = string(opts.SourceFormat)
 	return coreexecutor.Response{Payload: []byte(`{"ok":true}`)}, nil
 }
 
 func (e *responsesCaptureExecutor) ExecuteStream(_ context.Context, _ *coreauth.Auth, _ coreexecutor.Request, opts coreexecutor.Options) (*coreexecutor.StreamResult, error) {
 	e.streamCalls++
 	e.streamAlt = opts.Alt
-	e.sourceFormat = opts.SourceFormat.String()
+	e.sourceFormat = string(opts.SourceFormat)
 	ch := make(chan coreexecutor.StreamChunk, 1)
 	ch <- coreexecutor.StreamChunk{Payload: []byte("event: response.completed\ndata: {\"type\":\"response.completed\"}\n\n")}
 	close(ch)

@@ -251,7 +251,7 @@ func TestGetChannelGroupsReturnsGroupMetadata(t *testing.T) {
 func TestGetChannelGroupsReturnsChannelDetailsWithTags(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	manager := coreauth.NewManager(&memoryAuthStore{}, nil, nil)
+	manager := coreauth.NewManager(nil, nil, nil)
 	_, err := manager.Register(context.Background(), &coreauth.Auth{
 		ID:       "oauth-auth-tags",
 		FileName: "oauth-auth-tags.json",

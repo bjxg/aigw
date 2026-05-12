@@ -20,7 +20,7 @@ func newProviderConfigConflictHandler(t *testing.T, cfg *config.Config) *Handler
 	if err := os.WriteFile(configPath, []byte("{}\n"), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	store := &memoryAuthStore{}
+	store := &testMemoryStore{}
 	manager := coreauth.NewManager(store, nil, nil)
 	_, err := manager.Register(context.Background(), &coreauth.Auth{
 		ID:       "claude-oauth.json",
@@ -91,7 +91,7 @@ func TestPutOpenCodeGoKeysIgnoresDuplicateOAuthEmailAliases(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte("{}\n"), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	store := &memoryAuthStore{}
+	store := &testMemoryStore{}
 	manager := coreauth.NewManager(store, nil, nil)
 	for _, auth := range []*coreauth.Auth{
 		{
