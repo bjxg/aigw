@@ -1,37 +1,41 @@
-# CHANGELOG
+# Changelog
 
-## Unreleased
+All notable changes to this project will be documented in this file.
 
-### API Key ID migration (breaking change)
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-- **Backend**: Migrated `api_keys` table primary key from string `key` to auto-increment integer `id`
-- **Backend**: Changed `request_logs` table's `api_key` field to `api_key_id` integer foreign key pointing to `api_keys.id`
-- **Backend**: Updated `FilterOptions` struct to use `APIKeyFilterItem` array instead of string array for API key filtering
-- **Backend**: Optimized system request detection logic - now directly checks `api_key_id = 0` instead of string matching
-- **Backend**: Refactored filter options retrieval - queries `api_keys` table directly instead of distinct values from `request_logs`
-- **Backend**: Added `api_key` string to `api_key_id` conversion in public log query API for backward compatibility
-- **Frontend**: Updated `UsageLogItem` type definition to include `api_key_id` field
-- **Frontend**: Changed `FilterOptions` to use `APIKeyFilterItem` array for API key filter options
-- **Frontend**: Replaced text input filter with `SearchableSelect` component for API key filtering in request logs
-- **Frontend**: Updated `isSystemRequestLogKey` helper to check `api_key_id === 0`
-- **Frontend**: Fixed TypeScript type mismatches in `ApiKeysPage`, `ProvidersPage`, and `useMonitorDashboardState`
-- **Tests**: Updated all test files to use integer `api_key_id` values instead of string `api_key` values
-- **Tests**: Fixed native SQL statements in `usage_db_test.go` to match new schema
+## [Unreleased]
 
-### Codex auth metadata and startup registration
+### Changed
+- **README**: Updated project positioning to reflect the new architecture based on CliRelay.
+- **Docs**: Simplified documentation and removed outdated feature descriptions.
 
-- persisted Codex `plan_type` into runtime auth metadata during both CLI/device login and management OAuth login flows
-- preserved Codex `account_id` explicitly in runtime auth metadata for downstream request handling
-- backfilled Codex `plan_type` from legacy `id_token` metadata when older auth files do not store it explicitly
-- registered loaded auths during service startup so executors and model visibility are available immediately after boot
-- preserved Codex free-tier model routing without forcing tier-based model downgrades or synthetic excluded-model lists
+## [0.1.0] - 2025-XX-XX
 
-### Verification and tests
+### Overview
+This release marks the initial transformation of the project from a full AI CLI proxy into a lightweight **AI Gateway**. The core AI proxying and protocol translation responsibilities have been offloaded to [CliRelay](https://github.com/kittors/CliRelay) (upstream [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)), allowing this project to focus on management, analytics, and access control.
 
-- added auth metadata coverage test for Codex plan/account persistence
-- added watcher synthesis coverage for Codex `plan_type` backfill and free-tier pass-through behavior
-- added service startup registration coverage for loaded auth records
+### Removed
+- **OAuth Module**: Removed all OAuth authentication flows (Gemini, Claude, Codex, Qwen, etc.) from the core codebase.
+- **File Authentication**: Removed the file-based authentication system.
+- **Protocol Translation**: Removed the protocol format translation layer.
+- **TUI (Terminal UI)**: Removed the terminal-based management interface.
+- **Updater Sidecar**: Removed the built-in auto-updater component.
+
+### Added
+- **User Management**: Introduced a standalone user system with user CRUD operations and role-based associations.
+- **API Key Association**: API Keys can now be linked to specific users for resource ownership and permission control.
+- **PostgreSQL Support**: Added GORM-based PostgreSQL backend support alongside the existing SQLite database.
+
+### Enhanced
+- **Usage Analytics**: Migrated the usage database layer to GORM, enabling compatibility with PostgreSQL.
+- **API Key Management**: Added support for permission profiles to bulk-control available models, channel groups, and quota limits.
+- **Management Panel (`/manage`)**: Completely rebuilt the frontend dashboard to align with the new Gateway-focused architecture.
+
+### Architecture
+- `internal/auth/` and `internal/tui/` directories removed.
+- `internal/usage/` expanded to include user management responsibilities.
+- `internal/store/` streamlined for configuration persistence only.
 
 ### Notes
-
-- this change is aimed at Codex OAuth / ChatGPT-account free-tier behavior, not standard OpenAI API-key billing flows
+- If OAuth, file authentication, or protocol translation capabilities are required, users should deploy **CliRelay** as an independent upstream and configure `aigw` to route traffic through it.
