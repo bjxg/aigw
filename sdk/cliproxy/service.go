@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -477,10 +476,6 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}()
 
-	if err := s.ensureAuthDir(); err != nil {
-		return err
-	}
-
 	s.applyRetryConfig(s.cfg)
 
 	if s.coreManager != nil {
@@ -634,7 +629,7 @@ func (s *Service) Run(ctx context.Context) error {
 		s.rebindExecutors()
 	}
 
-	watcherWrapper, err = s.watcherFactory(s.configPath, s.cfg.AuthDir, reloadCallback)
+	watcherWrapper, err = s.watcherFactory(s.configPath, resolveAuthDirFromStore(), reloadCallback)
 	if err != nil {
 		return fmt.Errorf("cliproxy: failed to create watcher: %w", err)
 	}
@@ -745,24 +740,6 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		usage.StopDefault()
 	})
 	return shutdownErr
-}
-
-func (s *Service) ensureAuthDir() error {
-	info, err := os.Stat(s.cfg.AuthDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			if mkErr := os.MkdirAll(s.cfg.AuthDir, 0o755); mkErr != nil {
-				return fmt.Errorf("cliproxy: failed to create auth directory %s: %w", s.cfg.AuthDir, mkErr)
-			}
-			log.Infof("created missing auth directory: %s", s.cfg.AuthDir)
-			return nil
-		}
-		return fmt.Errorf("cliproxy: error checking auth directory %s: %w", s.cfg.AuthDir, err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("cliproxy: auth path exists but is not a directory: %s", s.cfg.AuthDir)
-	}
-	return nil
 }
 
 // registerModelsForAuth (re)binds provider models in the global registry using the core auth ID as client identifier.
@@ -1405,4 +1382,18 @@ func rewriteModelInfoName(name, oldID, newID string) string {
 func applyOAuthModelAlias(cfg *config.Config, provider, authKind string, models []*ModelInfo) []*ModelInfo {
 	// OAuth has been removed; model alias mapping no longer applies.
 	return models
+}
+
+// resolveAuthDirFromStore returns the auth directory path from the globally
+// registered token store. It is used when creating the file watcher since
+// auth-dir is no longer a configuration option.
+func resolveAuthDirFromStore() string {
+	if store := sdkAuth.GetTokenStore(); store != nil {
+		if provider, ok := store.(interface{ AuthDir() string }); ok {
+			if dir := strings.TrimSpace(provider.AuthDir()); dir != "" {
+				return dir
+			}
+		}
+	}
+	return ""
 }

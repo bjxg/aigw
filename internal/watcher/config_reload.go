@@ -86,16 +86,6 @@ func (w *Watcher) reloadConfig() bool {
 		return false
 	}
 
-	if w.mirroredAuthDir != "" {
-		newConfig.AuthDir = w.mirroredAuthDir
-	} else {
-		if resolvedAuthDir, errResolveAuthDir := util.ResolveAuthDir(newConfig.AuthDir); errResolveAuthDir != nil {
-			log.Errorf("failed to resolve auth directory from config: %v", errResolveAuthDir)
-		} else {
-			newConfig.AuthDir = resolvedAuthDir
-		}
-	}
-
 	w.clientsMutex.Lock()
 	var oldConfig *config.Config
 	_ = yaml.Unmarshal(w.oldConfigYaml, &oldConfig)
@@ -120,10 +110,9 @@ func (w *Watcher) reloadConfig() bool {
 		}
 	}
 
-	authDirChanged := oldConfig == nil || oldConfig.AuthDir != newConfig.AuthDir
 	forceAuthRefresh := oldConfig != nil && oldConfig.ForceModelPrefix != newConfig.ForceModelPrefix
 
 	log.Infof("config successfully reloaded, triggering client reload")
-	w.reloadClients(authDirChanged, nil, forceAuthRefresh)
+	w.reloadClients(false, nil, forceAuthRefresh)
 	return true
 }

@@ -11,7 +11,6 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/auth/vertex"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v6/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
@@ -23,9 +22,6 @@ import (
 func DoVertexImport(cfg *config.Config, keyPath string) {
 	if cfg == nil {
 		cfg = &config.Config{}
-	}
-	if resolved, errResolve := util.ResolveAuthDir(cfg.AuthDir); errResolve == nil {
-		cfg.AuthDir = resolved
 	}
 	rawPath := strings.TrimSpace(keyPath)
 	if rawPath == "" {
@@ -87,9 +83,6 @@ func DoVertexImport(cfg *config.Config, keyPath string) {
 	}
 
 	store := sdkAuth.GetTokenStore()
-	if setter, ok := store.(interface{ SetBaseDir(string) }); ok {
-		setter.SetBaseDir(cfg.AuthDir)
-	}
 	path, errSave := store.Save(context.Background(), record)
 	if errSave != nil {
 		log.Errorf("vertex-import: save credential failed: %v", errSave)

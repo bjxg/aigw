@@ -48,10 +48,6 @@ remote-management:
   # GitHub repository for the management control panel. Accepts a repository URL or releases API URL.
   panel-github-repository: "https://github.com/bjxg/aigw-panel"
 
-# Authentication directory (supports ~ for home directory).
-# In Docker/cloud deployments, AUTH_PATH overrides this value at runtime.
-auth-dir: "~/.cli-proxy-api"
-
 # API keys for authentication
 api-keys:
   - "your-api-key-1"

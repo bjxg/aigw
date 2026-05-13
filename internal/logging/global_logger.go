@@ -130,15 +130,6 @@ func ResolveLogDirectory(cfg *config.Config) string {
 	if cfg == nil {
 		return logDir
 	}
-	if !isDirWritable(logDir) {
-		authDir, err := util.ResolveAuthDir(cfg.AuthDir)
-		if err != nil {
-			log.Warnf("Failed to resolve auth-dir %q for log directory: %v", cfg.AuthDir, err)
-		}
-		if authDir != "" {
-			logDir = filepath.Join(authDir, "logs")
-		}
-	}
 	return logDir
 }
 

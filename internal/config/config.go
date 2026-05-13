@@ -1,7 +1,7 @@
 // Package config provides configuration management for the CLI Proxy API server.
 // It handles loading and parsing YAML configuration files, and provides structured
-// access to application settings including server port, authentication directory,
-// debug settings, proxy configuration, and API keys.
+// access to application settings including server port, debug settings, proxy
+// configuration, and API keys.
 package config
 
 import (
@@ -22,9 +22,6 @@ import (
 const (
 	DefaultPanelGitHubRepository = "https://github.com/bjxg/aigw-panel"
 	DefaultPprofAddr             = "127.0.0.1:8316"
-
-	// EnvAuthPath overrides auth-dir with the path visible inside the running container/process.
-	EnvAuthPath = "AUTH_PATH"
 )
 
 // Config represents the application's configuration, loaded from a YAML file.
@@ -56,9 +53,6 @@ type Config struct {
 
 	// RemoteManagement nests management-related options under 'remote-management'.
 	RemoteManagement RemoteManagement `yaml:"remote-management" json:"-"`
-
-	// AuthDir is the directory where authentication token files are stored.
-	AuthDir string `yaml:"auth-dir" json:"-"`
 
 	// Debug enables or disables debug-level logging and other debug features.
 	Debug bool `yaml:"debug" json:"debug"`
@@ -797,8 +791,6 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 		}
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
-	cfg.ApplyEnvOverrides()
-
 	// NOTE: Startup legacy key migration is intentionally disabled.
 	// Reason: avoid mutating config.yaml during server startup.
 	// Re-enable the block below if automatic startup migration is needed again.
@@ -919,16 +911,6 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 
 	// Return the populated configuration struct.
 	return &cfg, nil
-}
-
-// ApplyEnvOverrides applies process-level configuration overrides.
-func (cfg *Config) ApplyEnvOverrides() {
-	if cfg == nil {
-		return
-	}
-	if authPath := strings.TrimSpace(os.Getenv(EnvAuthPath)); authPath != "" {
-		cfg.AuthDir = authPath
-	}
 }
 
 // SanitizePayloadRules validates raw JSON payload rule params and drops invalid rules.
