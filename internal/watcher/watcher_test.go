@@ -152,8 +152,7 @@ func TestReloadConfigIfChanged_TriggersOnChangeAndSkipsUnchanged(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	writeConfig := func(port int, allowRemote bool) {
 		cfg := &config.Config{
-			Port:    port,
-			AuthDir: authDir,
+			Port: port,
 			RemoteManagement: config.RemoteManagement{
 				AllowRemote: allowRemote,
 			},
@@ -217,7 +216,7 @@ func TestStartAndStopSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create watcher: %v", err)
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -312,7 +311,7 @@ func TestAddOrUpdateClientSkipsUnchanged(t *testing.T) {
 			atomic.AddInt32(&reloads, 1)
 		},
 	}
-	w.SetConfig(&config.Config{AuthDir: tmpDir})
+	w.SetConfig(&config.Config{})
 	// Use normalizeAuthPath to match how addOrUpdateClient stores the key
 	w.lastAuthHashes[w.normalizeAuthPath(authFile)] = hexString(sum[:])
 
@@ -337,7 +336,7 @@ func TestAddOrUpdateClientTriggersReloadAndHash(t *testing.T) {
 			atomic.AddInt32(&reloads, 1)
 		},
 	}
-	w.SetConfig(&config.Config{AuthDir: tmpDir})
+	w.SetConfig(&config.Config{})
 
 	w.addOrUpdateClient(authFile)
 
@@ -363,7 +362,7 @@ func TestRemoveClientRemovesHash(t *testing.T) {
 			atomic.AddInt32(&reloads, 1)
 		},
 	}
-	w.SetConfig(&config.Config{AuthDir: tmpDir})
+	w.SetConfig(&config.Config{})
 	// Use normalizeAuthPath to set up the hash with the correct key format
 	w.lastAuthHashes[w.normalizeAuthPath(authFile)] = "hash"
 
@@ -464,8 +463,8 @@ func TestReloadClientsCachesAuthHashes(t *testing.T) {
 
 func TestReloadClientsLogsConfigDiffs(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldCfg := &config.Config{AuthDir: tmpDir, Port: 1, Debug: false}
-	newCfg := &config.Config{AuthDir: tmpDir, Port: 2, Debug: true}
+	oldCfg := &config.Config{Port: 1, Debug: false}
+	newCfg := &config.Config{Port: 2, Debug: true}
 
 	w := &Watcher{
 		authDir: tmpDir,
@@ -490,7 +489,7 @@ func TestReloadClientsFiltersProvidersWithNilCurrentAuths(t *testing.T) {
 	tmp := t.TempDir()
 	w := &Watcher{
 		authDir: tmp,
-		config:  &config.Config{AuthDir: tmp},
+		config:  &config.Config{},
 	}
 	w.reloadClients(false, []string{"match"}, false)
 	if len(w.currentAuths) != 0 {
@@ -573,7 +572,7 @@ func TestHandleEventRemovesAuthFile(t *testing.T) {
 	var reloads int32
 	w := &Watcher{
 		authDir:        tmpDir,
-		config:         &config.Config{AuthDir: tmpDir},
+		config:         &config.Config{},
 		lastAuthHashes: make(map[string]string),
 		reloadCallback: func(*config.Config) {
 			atomic.AddInt32(&reloads, 1)
@@ -721,7 +720,7 @@ func TestHandleEventIgnoresUnrelatedFiles(t *testing.T) {
 		lastAuthHashes: make(map[string]string),
 		reloadCallback: func(*config.Config) { atomic.AddInt32(&reloads, 1) },
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 
 	w.handleEvent(fsnotify.Event{Name: filepath.Join(tmpDir, "note.txt"), Op: fsnotify.Write})
 	if atomic.LoadInt32(&reloads) != 0 {
@@ -747,7 +746,7 @@ func TestHandleEventConfigChangeSchedulesReload(t *testing.T) {
 		lastAuthHashes: make(map[string]string),
 		reloadCallback: func(*config.Config) { atomic.AddInt32(&reloads, 1) },
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 
 	w.handleEvent(fsnotify.Event{Name: configPath, Op: fsnotify.Write})
 
@@ -779,7 +778,7 @@ func TestHandleEventAuthWriteTriggersUpdate(t *testing.T) {
 		lastAuthHashes: make(map[string]string),
 		reloadCallback: func(*config.Config) { atomic.AddInt32(&reloads, 1) },
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 
 	w.handleEvent(fsnotify.Event{Name: authFile, Op: fsnotify.Write})
 	if atomic.LoadInt32(&reloads) != 1 {
@@ -809,7 +808,7 @@ func TestHandleEventRemoveDebounceSkips(t *testing.T) {
 		},
 		reloadCallback: func(*config.Config) { atomic.AddInt32(&reloads, 1) },
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 
 	w.handleEvent(fsnotify.Event{Name: authFile, Op: fsnotify.Remove})
 	if atomic.LoadInt32(&reloads) != 0 {
@@ -841,7 +840,7 @@ func TestHandleEventAtomicReplaceUnchangedSkips(t *testing.T) {
 		lastAuthHashes: make(map[string]string),
 		reloadCallback: func(*config.Config) { atomic.AddInt32(&reloads, 1) },
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 	w.lastAuthHashes[w.normalizeAuthPath(authFile)] = hexString(sum[:])
 
 	w.handleEvent(fsnotify.Event{Name: authFile, Op: fsnotify.Rename})
@@ -875,7 +874,7 @@ func TestHandleEventAtomicReplaceChangedTriggersUpdate(t *testing.T) {
 		lastAuthHashes: make(map[string]string),
 		reloadCallback: func(*config.Config) { atomic.AddInt32(&reloads, 1) },
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 	w.lastAuthHashes[w.normalizeAuthPath(authFile)] = hexString(oldSum[:])
 
 	w.handleEvent(fsnotify.Event{Name: authFile, Op: fsnotify.Rename})
@@ -903,7 +902,7 @@ func TestHandleEventRemoveUnknownFileIgnored(t *testing.T) {
 		lastAuthHashes: make(map[string]string),
 		reloadCallback: func(*config.Config) { atomic.AddInt32(&reloads, 1) },
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 
 	w.handleEvent(fsnotify.Event{Name: authFile, Op: fsnotify.Remove})
 	if atomic.LoadInt32(&reloads) != 0 {
@@ -930,7 +929,7 @@ func TestHandleEventRemoveKnownFileDeletes(t *testing.T) {
 		lastAuthHashes: make(map[string]string),
 		reloadCallback: func(*config.Config) { atomic.AddInt32(&reloads, 1) },
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 	w.lastAuthHashes[w.normalizeAuthPath(authFile)] = "hash"
 
 	w.handleEvent(fsnotify.Event{Name: authFile, Op: fsnotify.Remove})
@@ -975,7 +974,7 @@ func TestRefreshAuthStateDispatchesRuntimeAuths(t *testing.T) {
 		authDir:        t.TempDir(),
 		lastAuthHashes: make(map[string]string),
 	}
-	w.SetConfig(&config.Config{AuthDir: w.authDir})
+	w.SetConfig(&config.Config{})
 	w.SetAuthUpdateQueue(queue)
 	defer w.stopDispatch()
 
@@ -1058,7 +1057,7 @@ func TestReloadConfigUsesMirroredAuthDir(t *testing.T) {
 	}
 
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("auth_dir: "+filepath.Join(tmpDir, "other")+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("port: 8317\n"), 0o644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
@@ -1068,7 +1067,7 @@ func TestReloadConfigUsesMirroredAuthDir(t *testing.T) {
 		mirroredAuthDir: authDir,
 		lastAuthHashes:  make(map[string]string),
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 
 	if ok := w.reloadConfig(); !ok {
 		t.Fatal("expected reloadConfig to succeed")
@@ -1076,15 +1075,20 @@ func TestReloadConfigUsesMirroredAuthDir(t *testing.T) {
 
 	w.clientsMutex.RLock()
 	defer w.clientsMutex.RUnlock()
-	if w.config == nil || w.config.AuthDir != authDir {
-		t.Fatalf("expected AuthDir to be overridden by mirroredAuthDir %s, got %+v", authDir, w.config)
+	if w.config == nil {
+		t.Fatal("expected config to be loaded after reload")
+	}
+	// mirroredAuthDir is still used by the watcher for auth file scanning,
+	// but it is no longer stored on Config.AuthDir.
+	if w.authDir != authDir {
+		t.Fatalf("expected watcher.authDir to remain %s, got %s", authDir, w.authDir)
 	}
 }
 
 func TestStartFailsWhenAuthDirMissing(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("auth_dir: "+filepath.Join(tmpDir, "missing-auth")+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("port: 8317\n"), 0o644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}
 	authDir := filepath.Join(tmpDir, "missing-auth")
@@ -1094,7 +1098,7 @@ func TestStartFailsWhenAuthDirMissing(t *testing.T) {
 		t.Fatalf("failed to create watcher: %v", err)
 	}
 	defer func() { _ = w.Stop() }()
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1216,7 +1220,7 @@ func TestScheduleConfigReloadDebounces(t *testing.T) {
 		authDir:        authDir,
 		reloadCallback: func(*config.Config) { atomic.AddInt32(&reloads, 1) },
 	}
-	w.SetConfig(&config.Config{AuthDir: authDir})
+	w.SetConfig(&config.Config{})
 
 	w.scheduleConfigReload()
 	w.scheduleConfigReload()
@@ -1299,7 +1303,7 @@ func TestReloadClientsFiltersOAuthProvidersWithoutRescan(t *testing.T) {
 	tmp := t.TempDir()
 	w := &Watcher{
 		authDir: tmp,
-		config:  &config.Config{AuthDir: tmp},
+		config:  &config.Config{},
 		currentAuths: map[string]*coreauth.Auth{
 			"a": {ID: "a", Provider: "Match"},
 			"b": {ID: "b", Provider: "other"},

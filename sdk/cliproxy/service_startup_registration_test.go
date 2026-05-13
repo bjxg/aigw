@@ -46,7 +46,7 @@ func TestServiceRun_RegistersModelsForLoadedAuths(t *testing.T) {
 	manager := coreauth.NewManager(store, &coreauth.RoundRobinSelector{}, nil)
 
 	service := &Service{
-		cfg:            &config.Config{AuthDir: t.TempDir(), Port: 0},
+		cfg:            &config.Config{Port: 0},
 		configPath:     "/tmp/config.yaml",
 		tokenProvider:  startupTokenProviderStub{},
 		apiKeyProvider: startupAPIKeyProviderStub{},

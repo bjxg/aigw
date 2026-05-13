@@ -1,7 +1,7 @@
 // Package config provides configuration management for the CLI Proxy API server.
 // It handles loading and parsing YAML configuration files, and provides structured
-// access to application settings including server port, authentication directory,
-// debug settings, proxy configuration, and API keys.
+// access to application settings including server port, debug settings, proxy
+// configuration, and API keys.
 package config
 
 // SDKConfig represents the application's configuration, loaded from a YAML file.

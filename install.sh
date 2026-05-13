@@ -465,8 +465,6 @@ remote-management:
   secret-key: "${CFG_SECRET}"
   disable-control-panel: false
 
-auth-dir: "/root/.cli-proxy-api"
-
 api-keys:
   - "${CFG_API_KEY}"
 
