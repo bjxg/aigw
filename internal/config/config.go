@@ -142,6 +142,9 @@ type Config struct {
 	// Payload defines default and override rules for provider payload parameters.
 	Payload PayloadConfig `yaml:"payload" json:"payload"`
 
+	// Base is the public base configuration for the server.
+	Base BaseConfig `yaml:"base" json:"base"`
+
 	// OAuth configures OIDC authentication for frontend users.
 	OAuth OAuthConfig `yaml:"oauth" json:"oauth"`
 
@@ -424,6 +427,12 @@ type PayloadModelRule struct {
 	Name string `yaml:"name" json:"name"`
 	// Protocol restricts the rule to a specific translator format (e.g., "gemini", "responses").
 	Protocol string `yaml:"protocol" json:"protocol"`
+}
+
+// BaseConfig configures the public base URL of the server.
+type BaseConfig struct {
+	// URL is the public base URL used to prefix API endpoint addresses.
+	URL string `yaml:"url" json:"url"`
 }
 
 // OAuthConfig configures OIDC authentication for frontend users.

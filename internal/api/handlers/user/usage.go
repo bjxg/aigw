@@ -3,13 +3,16 @@ package user
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/api/bodyutil"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
+	log "github.com/sirupsen/logrus"
 )
 
 const userUsageBodyLimit int64 = 8 << 10
@@ -159,23 +162,63 @@ func (h *Handler) GetUserAPIKeys(c *gin.Context) {
 		modelsByGroup[cg.Name] = cg.AllowedModels
 	}
 
+	baseURL := strings.TrimRight(h.cfg.Base.URL, "/")
+	log.Infof("GetUserAPIKeys: baseURL=%q, cfg.Base.URL=%q", baseURL, h.cfg.Base.URL)
 	result := make([]userAPIKeyItem, 0, len(keys))
 	for _, k := range keys {
 		groups := make([]userAPIKeyGroupItem, 0, len(k.AllowedChannelGroups))
-		for _, gName := range k.AllowedChannelGroups {
-			paths := pathRoutesByGroup[gName]
-			if paths == nil {
-				paths = []string{}
+		if len(k.AllowedChannelGroups) == 0 {
+			paths := []string{"/v1"}
+			if baseURL != "" {
+				paths = []string{baseURL + "/v1"}
 			}
-			models := modelsByGroup[gName]
-			if models == nil {
-				models = []string{}
+			allModels := registry.GetGlobalRegistry().GetAvailableModels("openai")
+			modelNames := make([]string, 0, len(allModels))
+			seen := make(map[string]bool, len(allModels))
+			for _, m := range allModels {
+				id, _ := m["id"].(string)
+				if id == "" {
+					continue
+				}
+				displayName, _ := m["display_name"].(string)
+				name := id
+				if displayName != "" {
+					name = displayName
+				}
+				if !seen[name] {
+					seen[name] = true
+					modelNames = append(modelNames, name)
+				}
 			}
+			sort.Strings(modelNames)
 			groups = append(groups, userAPIKeyGroupItem{
-				Name:   gName,
+				Name:   "",
 				Paths:  paths,
-				Models: models,
+				Models: modelNames,
 			})
+		} else {
+			for _, gName := range k.AllowedChannelGroups {
+				paths := pathRoutesByGroup[gName]
+				if paths == nil {
+					paths = []string{}
+				}
+				if baseURL != "" {
+					prefixed := make([]string, len(paths))
+					for i, p := range paths {
+						prefixed[i] = baseURL + p
+					}
+					paths = prefixed
+				}
+				models := modelsByGroup[gName]
+				if models == nil {
+					models = []string{}
+				}
+				groups = append(groups, userAPIKeyGroupItem{
+					Name:   gName,
+					Paths:  paths,
+					Models: models,
+				})
+			}
 		}
 		result = append(result, userAPIKeyItem{
 			ID:               k.ID,
