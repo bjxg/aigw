@@ -1,7 +1,10 @@
 package usage
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 )
@@ -127,4 +130,44 @@ func DeleteAPIKeyByID(id int64) error {
 // ReplaceAllAPIKeys atomically replaces all API keys with the given list.
 func ReplaceAllAPIKeys(entries []APIKeyRow) error {
 	return GormReplaceAllAPIKeys(entries)
+}
+
+// generateRandomAPIKey creates a new random API key string with sk- prefix.
+func generateRandomAPIKey() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		b = []byte("fallback-random-key")
+	}
+	return "sk-" + hex.EncodeToString(b)
+}
+
+// GenerateAPIKeyForUser creates a new API key for the given user with optional channel groups.
+func GenerateAPIKeyForUser(userID int64, name string, channelGroups []string) (APIKeyRow, error) {
+	key := generateRandomAPIKey()
+	// Ensure uniqueness in the unlikely case of collision.
+	for i := 0; i < 10; i++ {
+		if existing := GetAPIKey(key); existing == nil {
+			break
+		}
+		key = generateRandomAPIKey()
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	row := APIKeyRow{
+		Key:                  key,
+		Name:                 name,
+		UserID:               &userID,
+		Disabled:             false,
+		AllowedChannelGroups: channelGroups,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+	if err := UpsertAPIKey(row); err != nil {
+		return APIKeyRow{}, err
+	}
+	// Re-fetch to get the assigned ID.
+	created := GetAPIKey(key)
+	if created == nil {
+		return APIKeyRow{}, fmt.Errorf("failed to retrieve created api key")
+	}
+	return *created, nil
 }

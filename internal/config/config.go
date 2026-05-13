@@ -145,6 +145,9 @@ type Config struct {
 	// Base is the public base configuration for the server.
 	Base BaseConfig `yaml:"base" json:"base"`
 
+	// User configures frontend user portal defaults.
+	User UserConfig `yaml:"user" json:"user"`
+
 	// OAuth configures OIDC authentication for frontend users.
 	OAuth OAuthConfig `yaml:"oauth" json:"oauth"`
 
@@ -433,6 +436,12 @@ type PayloadModelRule struct {
 type BaseConfig struct {
 	// URL is the public base URL used to prefix API endpoint addresses.
 	URL string `yaml:"url" json:"url"`
+}
+
+// UserConfig configures frontend user portal defaults.
+type UserConfig struct {
+	// DefaultChannelGroups is the default channel groups assigned to auto-generated API keys.
+	DefaultChannelGroups []string `yaml:"default-channel-groups" json:"default-channel-groups"`
 }
 
 // OAuthConfig configures OIDC authentication for frontend users.

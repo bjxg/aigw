@@ -501,6 +501,7 @@ func (s *Server) setupRoutes() {
 		userAPIGroup.GET("/usage/logs/:id/content", userHandler.GetUserLogContent)
 		userAPIGroup.POST("/usage/logs/:id/content", userHandler.GetUserLogContent)
 		userAPIGroup.GET("/keys", userHandler.GetUserAPIKeys)
+		userAPIGroup.POST("/keys/generate", userHandler.PostGenerateUserAPIKey)
 		userAPIGroup.POST("/keys/:id/toggle", userHandler.ToggleUserAPIKey)
 	}
 

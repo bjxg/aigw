@@ -238,6 +238,49 @@ func (h *Handler) GetUserAPIKeys(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": result})
 }
 
+// PostGenerateUserAPIKey creates a new API key for the currently authenticated user.
+// The key is assigned the default channel groups from config (if any).
+func (h *Handler) PostGenerateUserAPIKey(c *gin.Context) {
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(int64)
+	if !ok || userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	user, err := usage.GormGetUserByID(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+		return
+	}
+
+	channelGroups := h.cfg.User.DefaultChannelGroups
+	if channelGroups == nil {
+		channelGroups = []string{}
+	}
+
+	row, err := usage.GenerateAPIKeyForUser(userID, user.Name, channelGroups)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":       row.ID,
+		"key":      row.Key,
+		"name":     row.Name,
+		"disabled": row.Disabled,
+	})
+}
+
 // ToggleUserAPIKey toggles the disabled status of an API key belonging to the
 // currently authenticated user. The key is identified by numeric ID in the URL.
 func (h *Handler) ToggleUserAPIKey(c *gin.Context) {
