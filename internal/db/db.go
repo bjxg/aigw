@@ -19,9 +19,18 @@ import (
 )
 
 var (
-	gormDB *gorm.DB
-	mu     sync.Mutex
+	gormDB   *gorm.DB
+	mu       sync.Mutex
+	sqlDebug bool
 )
+
+// SetSQLDebug enables or disables SQL statement logging. When enabled, GORM
+// logs every SQL query along with its bound parameters at the Info level.
+func SetSQLDebug(v bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	sqlDebug = v
+}
 
 // Open creates a GORM database connection based on the driver name and DSN.
 // Supported drivers: "sqlite", "postgres".
@@ -197,16 +206,24 @@ func applySQLitePragmasRaw(db *sql.DB) error {
 type gormLogrusWriter struct{}
 
 func (w *gormLogrusWriter) Printf(format string, args ...interface{}) {
-	log.Debugf(format, args...)
+	if sqlDebug {
+		log.Infof(format, args...)
+	} else {
+		log.Debugf(format, args...)
+	}
 }
 
 // newGormLogrusLogger creates a GORM logger that writes to logrus.
 func newGormLogrusLogger() logger.Interface {
+	level := logger.Warn
+	if sqlDebug {
+		level = logger.Info
+	}
 	return logger.New(
 		&gormLogrusWriter{},
 		logger.Config{
 			SlowThreshold:             200 * time.Millisecond,
-			LogLevel:                  logger.Warn,
+			LogLevel:                  level,
 			IgnoreRecordNotFoundError: true,
 			Colorful:                  false,
 		},

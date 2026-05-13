@@ -392,6 +392,32 @@ func QueryModelsForKey(apiKeyID int64, days int) ([]string, error) {
 	return GormQueryModelsForKey(apiKeyID, days)
 }
 
+// QueryDailySeriesForUser returns per-day aggregated request count and token usage for a given user.
+func QueryDailySeriesForUser(userID int64, apiKeyID int64, days int) ([]DailySeriesPoint, error) {
+	return GormQueryDailySeriesForUser(userID, apiKeyID, days)
+}
+
+// QueryModelDistributionForUser returns request count and token usage grouped by model for a given user.
+func QueryModelDistributionForUser(userID int64, apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
+	return GormQueryModelDistributionForUser(userID, apiKeyID, days)
+}
+
+// QueryModelsForUser returns the distinct models used by a specific user within the time range.
+func QueryModelsForUser(userID int64, days int) ([]string, error) {
+	return GormQueryModelsForUser(userID, days)
+}
+
+// QueryLogContentForUser retrieves log content for a single entry, but only if it belongs to the given user.
+func QueryLogContentForUser(id int64, userID int64) (LogContentResult, error) {
+	return GormQueryLogContentForUser(id, userID)
+}
+
+// QueryLogContentPartForUser retrieves only one side (input/output) of the stored request/response content
+// for a single entry, but only if it belongs to the given user.
+func QueryLogContentPartForUser(id int64, userID int64, part string) (LogContentPartResult, error) {
+	return GormQueryLogContentPartForUser(id, userID, part)
+}
+
 // LogContentResult holds the content detail for a single log entry.
 type LogContentResult struct {
 	ID            int64  `json:"id"`

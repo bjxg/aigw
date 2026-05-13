@@ -81,6 +81,24 @@ func GormListAPIKeys() []APIKeyRow {
 	return result
 }
 
+// GormListAPIKeysByUserID retrieves API key entries for a specific user using GORM.
+func GormListAPIKeysByUserID(userID int64) []APIKeyRow {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil
+	}
+	var keys []APIKey
+	if err := gormDB.Where("user_id = ?", userID).Order("created_at ASC").Find(&keys).Error; err != nil {
+		log.Errorf("usage: GORM list api_keys by user_id %d: %v", userID, err)
+		return nil
+	}
+	result := make([]APIKeyRow, 0, len(keys))
+	for _, k := range keys {
+		result = append(result, gormToAPIKeyRow(k))
+	}
+	return result
+}
+
 // GormGetAPIKey retrieves a single API key entry by key string using GORM.
 func GormGetAPIKey(key string) *APIKeyRow {
 	gormDB := getGormDB()

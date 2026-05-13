@@ -88,6 +88,11 @@ func ListAPIKeys() []APIKeyRow {
 	return GormListAPIKeys()
 }
 
+// ListAPIKeysByUserID retrieves API key entries for a specific user.
+func ListAPIKeysByUserID(userID int64) []APIKeyRow {
+	return GormListAPIKeysByUserID(userID)
+}
+
 // GetAPIKey retrieves a single API key entry by key string.
 func GetAPIKey(key string) *APIKeyRow {
 	return GormGetAPIKey(key)

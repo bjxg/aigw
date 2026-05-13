@@ -863,6 +863,153 @@ func (r *gormLogRepo) QueryModelsForKey(ctx context.Context, apiKeyID int64, day
 	return results, nil
 }
 
+// --- QueryDailySeriesForUser ---
+
+func (r *gormLogRepo) QueryDailySeriesForUser(ctx context.Context, userID int64, apiKeyID int64, days int) ([]DailySeriesPoint, error) {
+	if days < 1 {
+		days = 7
+	}
+
+	query := r.db.WithContext(ctx).Model(&RequestLog{}).Where("user_id = ? AND timestamp >= ?", userID, CutoffStartUTC(days))
+	if apiKeyID != 0 {
+		query = query.Where("api_key_id = ?", apiKeyID)
+	}
+
+	dateExpr := dateTruncSQL("timestamp", "day")
+
+	var results []DailySeriesPoint
+	err := query.Select(dateExpr + " as date, COUNT(*) as requests, SUM(CASE WHEN failed = true THEN 1 ELSE 0 END) as failed_requests, COALESCE(SUM(input_tokens),0) as input_tokens, COALESCE(SUM(output_tokens),0) as output_tokens").
+		Group("date").
+		Order("date").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("usage: daily series for user query: %w", err)
+	}
+	return results, nil
+}
+
+// --- QueryModelDistributionForUser ---
+
+func (r *gormLogRepo) QueryModelDistributionForUser(ctx context.Context, userID int64, apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
+	if days < 1 {
+		days = 7
+	}
+
+	query := r.db.WithContext(ctx).Model(&RequestLog{}).Where("user_id = ? AND timestamp >= ?", userID, CutoffStartUTC(days))
+	if apiKeyID != 0 {
+		query = query.Where("api_key_id = ?", apiKeyID)
+	}
+
+	var results []ModelDistributionPoint
+	err := query.Select("model, COUNT(*) as requests, COALESCE(SUM(total_tokens),0) as tokens").
+		Where("model != ''").
+		Group("model").
+		Order("requests DESC").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("usage: model distribution for user query: %w", err)
+	}
+	return results, nil
+}
+
+// --- QueryModelsForUser ---
+
+func (r *gormLogRepo) QueryModelsForUser(ctx context.Context, userID int64, days int) ([]string, error) {
+	if days < 1 {
+		days = 7
+	}
+
+	var results []string
+	err := r.db.WithContext(ctx).Model(&RequestLog{}).
+		Distinct("model").
+		Where("user_id = ? AND timestamp >= ? AND model != ''", userID, CutoffStartUTC(days)).
+		Pluck("model", &results).Error
+	if err != nil {
+		return nil, fmt.Errorf("usage: distinct models for user: %w", err)
+	}
+	return results, nil
+}
+
+// --- QueryContentForUser ---
+
+func (r *gormLogRepo) QueryContentForUser(ctx context.Context, id int64, userID int64) (LogContentResult, error) {
+	var result LogContentResult
+	var compression string
+	var inputCompressed, outputCompressed []byte
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT logs.id, logs.model, content.compression, content.input_content, content.output_content
+		FROM request_logs logs
+		JOIN request_log_content content ON content.log_id = logs.id
+		WHERE logs.id = ? AND logs.user_id = ?
+	`, id, userID).Row()
+	err := row.Scan(&result.ID, &result.Model, &compression, &inputCompressed, &outputCompressed)
+	if err == nil && result.ID > 0 {
+		inputDecoded, err := decompressLogContent(compression, inputCompressed)
+		if err != nil {
+			return LogContentResult{}, err
+		}
+		outputDecoded, err := decompressLogContent(compression, outputCompressed)
+		if err != nil {
+			return LogContentResult{}, err
+		}
+		result.InputContent = inputDecoded
+		result.OutputContent = outputDecoded
+		return result, nil
+	}
+
+	return LogContentResult{}, fmt.Errorf("usage: query log content for user: not found (id=%d, user_id=%d)", id, userID)
+}
+
+// --- QueryContentPartForUser ---
+
+func (r *gormLogRepo) QueryContentPartForUser(ctx context.Context, id int64, userID int64, part string) (LogContentPartResult, error) {
+	part, err := normalizeLogContentPart(part)
+	if err != nil {
+		return LogContentPartResult{}, err
+	}
+
+	column := "input_content"
+	if part == "output" {
+		column = "output_content"
+	} else if part == "details" {
+		column = "detail_content"
+	}
+
+	var logID int64
+	var model string
+	var compression string
+	var content []byte
+	row := r.db.WithContext(ctx).Raw(fmt.Sprintf(`
+		SELECT logs.id, logs.model, content.compression, content.%s
+		FROM request_logs logs
+		JOIN request_log_content content ON content.log_id = logs.id
+		WHERE logs.id = ? AND logs.user_id = ?
+	`, column), id, userID).Row()
+	err = row.Scan(&logID, &model, &compression, &content)
+	if err == nil && logID > 0 {
+		decoded, err := decompressLogContent(compression, content)
+		if err != nil {
+			return LogContentPartResult{}, err
+		}
+		return LogContentPartResult{
+			ID:      logID,
+			Model:   model,
+			Content: decoded,
+			Part:    part,
+		}, nil
+	}
+
+	if part == "details" {
+		var reqLog RequestLog
+		if err := r.db.WithContext(ctx).Select("id, model").Where("id = ? AND user_id = ?", id, userID).First(&reqLog).Error; err != nil {
+			return LogContentPartResult{}, fmt.Errorf("usage: query log content part for user: %w", err)
+		}
+		return LogContentPartResult{ID: reqLog.ID, Model: reqLog.Model, Part: part}, nil
+	}
+
+	return LogContentPartResult{}, fmt.Errorf("usage: query log content part for user: not found (id=%d, user_id=%d)", id, userID)
+}
+
 // --- Helper functions for GORM filters ---
 
 // applyLogFilters applies common filter parameters to a GORM query.
@@ -1183,6 +1330,56 @@ func GormQueryModelsForKey(apiKeyID int64, days int) ([]string, error) {
 	}
 	repo := &gormLogRepo{db: gormDB}
 	return repo.QueryModelsForKey(context.Background(), apiKeyID, days)
+}
+
+// GormQueryDailySeriesForUser is the GORM-backed implementation of QueryDailySeriesForUser.
+func GormQueryDailySeriesForUser(userID int64, apiKeyID int64, days int) ([]DailySeriesPoint, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil, nil
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.QueryDailySeriesForUser(context.Background(), userID, apiKeyID, days)
+}
+
+// GormQueryModelDistributionForUser is the GORM-backed implementation of QueryModelDistributionForUser.
+func GormQueryModelDistributionForUser(userID int64, apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil, nil
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.QueryModelDistributionForUser(context.Background(), userID, apiKeyID, days)
+}
+
+// GormQueryModelsForUser is the GORM-backed implementation of QueryModelsForUser.
+func GormQueryModelsForUser(userID int64, days int) ([]string, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return make([]string, 0), nil
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.QueryModelsForUser(context.Background(), userID, days)
+}
+
+// GormQueryLogContentForUser is the GORM-backed implementation of QueryLogContentForUser.
+func GormQueryLogContentForUser(id int64, userID int64) (LogContentResult, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return LogContentResult{}, fmt.Errorf("usage: database not initialised")
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.QueryContentForUser(context.Background(), id, userID)
+}
+
+// GormQueryLogContentPartForUser is the GORM-backed implementation of QueryLogContentPartForUser.
+func GormQueryLogContentPartForUser(id int64, userID int64, part string) (LogContentPartResult, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return LogContentPartResult{}, fmt.Errorf("usage: database not initialised")
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.QueryContentPartForUser(context.Background(), id, userID, part)
 }
 
 // GormQueryTotalCostByKey is the GORM-backed implementation of QueryTotalCostByKey.

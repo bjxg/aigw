@@ -15,6 +15,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/api"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/api/middleware"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/db"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy"
 	log "github.com/sirupsen/logrus"
@@ -63,6 +64,7 @@ func StartService(cfg *config.Config, configPath string, localPassword string) {
 		}
 	}
 
+	db.SetSQLDebug(cfg.Debug)
 	if err := usage.InitDB(dbDriver, url, cfg.RequestLogStorage, loc); err != nil {
 		log.Errorf("usage: failed to initialize database: %v", err)
 	}
@@ -143,6 +145,7 @@ func StartServiceBackground(cfg *config.Config, configPath string, localPassword
 		}
 	}
 
+	db.SetSQLDebug(cfg.Debug)
 	if err := usage.InitDB(dbDriver, url, cfg.RequestLogStorage, loc); err != nil {
 		log.Errorf("usage: failed to initialize database: %v", err)
 	}

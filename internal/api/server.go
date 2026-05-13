@@ -427,6 +427,15 @@ func (s *Server) setupRoutes() {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
+
+		// SPA fallback for /user/* client-side routes.
+		// Registered here because Gin's radix tree does not allow /user/*filepath
+		// alongside /user/api/... static segments.
+		if strings.HasPrefix(c.Request.URL.Path, "/user/") {
+			s.serveUserControlPanel(c)
+			return
+		}
+
 		rawGroupPath, apiPath, ok := splitGroupedAPIPath(c.Request.URL.Path)
 		if !ok {
 			c.AbortWithStatus(http.StatusNotFound)
@@ -480,9 +489,26 @@ func (s *Server) setupRoutes() {
 		oidcGroup.POST("/logout", middleware.UserAuthMiddleware(), userHandler.Logout)
 	}
 
+	// User API routes (protected by UserAuthMiddleware) — must be registered BEFORE
+	// the SPA wildcard fallback so that exact paths take precedence.
+	userAPIGroup := s.engine.Group("/user/api")
+	userAPIGroup.Use(middleware.UserAuthMiddleware())
+	{
+		userAPIGroup.GET("/usage/logs", userHandler.GetUserUsageLogs)
+		userAPIGroup.POST("/usage/logs", userHandler.GetUserUsageLogs)
+		userAPIGroup.GET("/usage/chart-data", userHandler.GetUserUsageChartData)
+		userAPIGroup.POST("/usage/chart-data", userHandler.GetUserUsageChartData)
+		userAPIGroup.GET("/usage/logs/:id/content", userHandler.GetUserLogContent)
+		userAPIGroup.POST("/usage/logs/:id/content", userHandler.GetUserLogContent)
+		userAPIGroup.GET("/keys", userHandler.GetUserAPIKeys)
+	}
+
 	// User SPA portal — serves user.html for all /user/* client-side routes.
 	s.engine.GET("/user", s.serveUserControlPanel)
-	s.engine.GET("/user/*filepath", s.serveUserControlPanel)
+	// NOTE: We do NOT register /user/*filepath here because Gin's radix tree
+	// does not allow a wildcard and a static segment under the same parent
+	// (e.g. /user/*filepath conflicts with /user/api/...).
+	// SPA fallback for /user/* is handled in NoRoute instead.
 
 	// Management routes are registered lazily by registerManagementRoutes when a secret is configured.
 }
@@ -824,6 +850,10 @@ func (s *Server) serveUserControlPanel(c *gin.Context) {
 
 	// SPA mode: try to serve the requested static file from panelDir first.
 	reqPath := strings.TrimSpace(c.Param("filepath"))
+	if reqPath == "" {
+		// Called from NoRoute (no :filepath param); derive from URL path.
+		reqPath = strings.TrimPrefix(c.Request.URL.Path, "/user")
+	}
 	if reqPath != "" && reqPath != "/" {
 		cleanPath := filepath.Clean(strings.TrimPrefix(reqPath, "/"))
 		if cleanPath != "." && !strings.Contains(cleanPath, "..") {
