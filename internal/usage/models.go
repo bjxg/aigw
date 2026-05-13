@@ -245,7 +245,23 @@ type User struct {
 }
 
 // TableName overrides the table name.
-func (User) TableName() string { return "users" }
+func (User) TableName() string { return "user" }
+
+// --- OAuthSession ---
+
+// OAuthSession maps to the oauth_sessions table.
+type OAuthSession struct {
+	ID        string `gorm:"primaryKey;not null" json:"id"`
+	UserID    int64  `gorm:"index:idx_oauth_session_user_id;not null" json:"user_id"`
+	Provider  string `gorm:"index:idx_oauth_session_user_provider;not null" json:"provider"`
+	Token     string `gorm:"not null" json:"-"`
+	ExpiresAt int64  `gorm:"index:idx_oauth_session_expires_at;not null" json:"expires_at"`
+	CreatedAt int64  `gorm:"not null" json:"created_at"`
+	UpdatedAt int64  `gorm:"not null" json:"updated_at"`
+}
+
+// TableName overrides the table name.
+func (OAuthSession) TableName() string { return "oauth_sessions" }
 
 // --- JSONStringList helper type ---
 
@@ -304,6 +320,7 @@ func AllModels() []interface{} {
 		&ProxyPool{},
 		&RuntimeSetting{},
 		&User{},
+		&OAuthSession{},
 	}
 }
 

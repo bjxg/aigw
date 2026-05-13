@@ -403,3 +403,16 @@ nonstream-keepalive-interval: 0
 #       params: # JSON paths (gjson/sjson syntax) to remove from the payload
 #         - "generationConfig.thinkingConfig.thinkingBudget"
 #         - "generationConfig.responseJsonSchema"
+
+# OAuth / OIDC settings for frontend user authentication.
+# When enabled, frontend users can log in via OIDC (e.g., Casdoor).
+# oauth:
+#   enable: false
+#   provider_name: "casdoor"
+#   provider_url: "https://casdoor.example.com"
+#   client_id: "your-client-id"
+#   client_secret: "your-client-secret"
+#   redirect_uri: "https://panel.example.com/oauth/oidc/callback"
+#   scopes: "openid profile email"
+#   default_user_role: "user"
+#   update_name_on_login: true

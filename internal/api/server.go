@@ -27,6 +27,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/access"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/api/bodyutil"
 	managementHandlers "github.com/router-for-me/CLIProxyAPI/v6/internal/api/handlers/management"
+	userHandlers "github.com/router-for-me/CLIProxyAPI/v6/internal/api/handlers/user"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/api/middleware"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/api/modules"
 	ampmodule "github.com/router-for-me/CLIProxyAPI/v6/internal/api/modules/amp"
@@ -469,6 +470,20 @@ func (s *Server) setupRoutes() {
 	})
 	s.engine.POST("/v1internal:method", geminiCLIHandlers.CLIHandler)
 
+	// User OIDC routes (under /oidc so /user/* can be reserved for the SPA portal)
+	userHandler := userHandlers.NewHandler(s.cfg)
+	oidcGroup := s.engine.Group("/oidc")
+	{
+		oidcGroup.GET("/authorize", userHandler.Authorize)
+		oidcGroup.POST("/callback", userHandler.Callback)
+		oidcGroup.GET("/info", middleware.UserAuthMiddleware(), userHandler.UserInfo)
+		oidcGroup.POST("/logout", middleware.UserAuthMiddleware(), userHandler.Logout)
+	}
+
+	// User SPA portal — serves user.html for all /user/* client-side routes.
+	s.engine.GET("/user", s.serveUserControlPanel)
+	s.engine.GET("/user/*filepath", s.serveUserControlPanel)
+
 	// Management routes are registered lazily by registerManagementRoutes when a secret is configured.
 }
 
@@ -790,6 +805,42 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 	// HTML files should not be cached – always serve fresh.
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.File(htmlFile)
+}
+
+func (s *Server) serveUserControlPanel(c *gin.Context) {
+	cfg := s.cfg
+	if cfg == nil || cfg.RemoteManagement.DisableControlPanel {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	panelDir := s.resolvePanelDir()
+	if panelDir == "" {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	// SPA mode: try to serve the requested static file from panelDir first.
+	reqPath := strings.TrimSpace(c.Param("filepath"))
+	if reqPath != "" && reqPath != "/" {
+		cleanPath := filepath.Clean(strings.TrimPrefix(reqPath, "/"))
+		if cleanPath != "." && !strings.Contains(cleanPath, "..") {
+			candidate := filepath.Join(panelDir, cleanPath)
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				s.serveStaticFileWithCompression(c, candidate)
+				return
+			}
+		}
+	}
+
+	// SPA fallback: serve user.html for all non-static-asset routes.
+	htmlFile := filepath.Join(panelDir, "user.html")
+	if _, err := os.Stat(htmlFile); err != nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
 	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 	c.File(htmlFile)
 }

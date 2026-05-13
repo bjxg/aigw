@@ -207,6 +207,23 @@ func GormUpdateUser(id int64, updates map[string]interface{}) error {
 	return nil
 }
 
+// GormGetUserByUsername retrieves a single user by username.
+func GormGetUserByUsername(username string) (*User, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil, fmt.Errorf("database not initialised")
+	}
+
+	var user User
+	if err := gormDB.Where("username = ?", username).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("usage: GORM get user by username %s: %w", username, err)
+	}
+	return &user, nil
+}
+
 // GormDeleteUser removes a user by ID.
 func GormDeleteUser(id int64) error {
 	gormDB := getGormDB()

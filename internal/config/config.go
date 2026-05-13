@@ -142,6 +142,9 @@ type Config struct {
 	// Payload defines default and override rules for provider payload parameters.
 	Payload PayloadConfig `yaml:"payload" json:"payload"`
 
+	// OAuth configures OIDC authentication for frontend users.
+	OAuth OAuthConfig `yaml:"oauth" json:"oauth"`
+
 	legacyMigrationPending bool `yaml:"-" json:"-"`
 }
 
@@ -421,6 +424,28 @@ type PayloadModelRule struct {
 	Name string `yaml:"name" json:"name"`
 	// Protocol restricts the rule to a specific translator format (e.g., "gemini", "responses").
 	Protocol string `yaml:"protocol" json:"protocol"`
+}
+
+// OAuthConfig configures OIDC authentication for frontend users.
+type OAuthConfig struct {
+	// Enable toggles OIDC login for frontend users.
+	Enable bool `yaml:"enable" json:"enable"`
+	// ProviderName is the display name of the OIDC provider (e.g., "casdoor").
+	ProviderName string `yaml:"provider_name" json:"provider_name"`
+	// ProviderURL is the OIDC issuer URL (e.g., "https://casdoor.example.com").
+	ProviderURL string `yaml:"provider_url" json:"provider_url"`
+	// ClientID is the OIDC client ID.
+	ClientID string `yaml:"client_id" json:"client_id"`
+	// ClientSecret is the OIDC client secret.
+	ClientSecret string `yaml:"client_secret" json:"-"`
+	// RedirectURI is the frontend callback URL (e.g., "https://panel.example.com/oauth/oidc/callback").
+	RedirectURI string `yaml:"redirect_uri" json:"redirect_uri"`
+	// Scopes is a space-separated list of OIDC scopes.
+	Scopes string `yaml:"scopes" json:"scopes"`
+	// DefaultUserRole is the role assigned to newly created users (default: "user").
+	DefaultUserRole string `yaml:"default_user_role" json:"default_user_role"`
+	// UpdateNameOnLogin updates user name/email from ID token on each login when true.
+	UpdateNameOnLogin bool `yaml:"update_name_on_login" json:"update_name_on_login"`
 }
 
 // CloakConfig configures request cloaking for non-Claude-Code clients.
