@@ -113,6 +113,12 @@ func DeleteAPIKey(key string) error {
 	return GormDeleteAPIKey(key)
 }
 
+// UpdateAPIKeyDisabledByIDAndUserID updates the disabled status of an API key
+// only if it belongs to the given user.
+func UpdateAPIKeyDisabledByIDAndUserID(id int64, userID int64, disabled bool) error {
+	return GormUpdateAPIKeyDisabledByIDAndUserID(id, userID, disabled)
+}
+
 // DeleteAPIKeyByID removes an API key entry by numeric ID.
 func DeleteAPIKeyByID(id int64) error {
 	return GormDeleteAPIKeyByID(id)

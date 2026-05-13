@@ -195,6 +195,50 @@ func (h *Handler) GetUserAPIKeys(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": result})
 }
 
+// ToggleUserAPIKey toggles the disabled status of an API key belonging to the
+// currently authenticated user. The key is identified by numeric ID in the URL.
+func (h *Handler) ToggleUserAPIKey(c *gin.Context) {
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(int64)
+	if !ok || userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
+	if err != nil || id < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key id"})
+		return
+	}
+
+	type toggleRequest struct {
+		Disabled bool `json:"disabled"`
+	}
+	var req toggleRequest
+	if c.Request.Method == http.MethodPost {
+		body, err := bodyutil.ReadRequestBody(c, userUsageBodyLimit)
+		if err == nil && len(body) > 0 {
+			_ = json.Unmarshal(body, &req)
+		}
+	}
+
+	if err := usage.UpdateAPIKeyDisabledByIDAndUserID(id, userID, req.Disabled); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "disabled": req.Disabled})
+}
+
 // GetUserUsageLogs returns paginated request log entries for the currently
 // authenticated user. An optional api_key parameter can scope the results to a
 // single key, but the query is always filtered by the user's ID.

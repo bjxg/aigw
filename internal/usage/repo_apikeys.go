@@ -184,6 +184,25 @@ func GormDeleteAPIKey(key string) error {
 	return nil
 }
 
+// GormUpdateAPIKeyDisabledByIDAndUserID updates the disabled status of an API key,
+// but only if it belongs to the specified user. Returns error if not found or not owned.
+func GormUpdateAPIKeyDisabledByIDAndUserID(id int64, userID int64, disabled bool) error {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return fmt.Errorf("database not initialised")
+	}
+	result := gormDB.Model(&APIKey{}).
+		Where("id = ? AND user_id = ?", id, userID).
+		Update("disabled", disabled)
+	if result.Error != nil {
+		return fmt.Errorf("usage: GORM update api_key disabled: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("api_key not found or does not belong to current user")
+	}
+	return nil
+}
+
 // GormDeleteAPIKeyByID removes an API key entry by numeric ID using GORM.
 func GormDeleteAPIKeyByID(id int64) error {
 	gormDB := getGormDB()

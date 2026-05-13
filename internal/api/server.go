@@ -501,6 +501,7 @@ func (s *Server) setupRoutes() {
 		userAPIGroup.GET("/usage/logs/:id/content", userHandler.GetUserLogContent)
 		userAPIGroup.POST("/usage/logs/:id/content", userHandler.GetUserLogContent)
 		userAPIGroup.GET("/keys", userHandler.GetUserAPIKeys)
+		userAPIGroup.POST("/keys/:id/toggle", userHandler.ToggleUserAPIKey)
 	}
 
 	// User SPA portal — serves user.html for all /user/* client-side routes.
