@@ -9,7 +9,7 @@ import (
 
 func TestBuildConfigChangeDetails(t *testing.T) {
 	oldCfg := &config.Config{
-		Port:    8080,
+		Port: 8080,
 		GeminiKey: []config.GeminiKey{
 			{APIKey: "old", BaseURL: "http://old", ExcludedModels: []string{"old-model"}},
 		},
@@ -36,7 +36,7 @@ func TestBuildConfigChangeDetails(t *testing.T) {
 	}
 
 	newCfg := &config.Config{
-		Port:    9090,
+		Port: 9090,
 		GeminiKey: []config.GeminiKey{
 			{APIKey: "old", BaseURL: "http://old", ExcludedModels: []string{"old-model", "extra"}},
 		},

@@ -106,8 +106,6 @@ func normalizeLogContentFormatValue(format string) string {
 	}
 }
 
-
-
 type userAPIKeyGroupItem struct {
 	Name   string   `json:"name"`
 	Paths  []string `json:"paths"`
