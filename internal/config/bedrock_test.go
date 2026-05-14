@@ -10,7 +10,7 @@ func TestLoadConfigReadsBedrockKeys(t *testing.T) {
 	t.Parallel()
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	content := []byte(`port: 8317
+	content := []byte(`port: 8217
 bedrock-api-key:
   - name: bedrock bearer
     auth-mode: api-key

@@ -409,7 +409,7 @@ func TestPutConfigYAMLRejectsInvalidRoutingRestrictions(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("port: 8317\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("port: 8217\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 

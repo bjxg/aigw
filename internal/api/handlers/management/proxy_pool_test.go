@@ -59,7 +59,7 @@ func TestPutProxyPoolNormalizesAndPersists(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(configPath, []byte("port: 8317\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("port: 8217\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	h := NewHandler(&config.Config{}, configPath, nil)

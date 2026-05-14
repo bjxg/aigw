@@ -26,7 +26,7 @@ aigw is a lightweight **AI Gateway** that consolidates upstream AI services into
 │   AI Coding Tools     │         │              │         │  Upstream Providers │
 │                       │         │              │ ──────▶ │  Google Gemini      │
 │  Claude Code          │ ──────▶ │   aigw       │ ──────▶ │  OpenAI / Codex    │
-│  Gemini CLI           │         │   :8317      │ ──────▶ │  Anthropic Claude  │
+│  Gemini CLI           │         │   :8217      │ ──────▶ │  Anthropic Claude  │
 │  OpenAI Codex         │         │              │ ──────▶ │  Vertex / OpenAI   │
 │  Any OAI-compatible   │         └──────────────┘         │  ...                │
 └───────────────────────┘                                  └────────────────────┘
@@ -75,21 +75,21 @@ docker compose restart cli-proxy-api
 
 After startup:
 
-- API endpoint: `http://localhost:8317`
-- Web panel: `http://localhost:8317/manage`
+- API endpoint: `http://localhost:8217`
+- Web panel: `http://localhost:8217/manage`
 - Logs: `docker compose logs -f cli-proxy-api`
 
 By default, client API routes require an API key. To run without keys, set `allow-unauthenticated: true` (not recommended for production).
 
 ### Point Your Tools
 
-Set your AI tool's API base to `http://localhost:8317` and start coding!
+Set your AI tool's API base to `http://localhost:8217` and start coding!
 
 **Example: OpenAI Codex (`~/.codex/config.toml`)**
 ```toml
 [model_providers.tabcode]
 name = "openai"
-base_url = "http://localhost:8317/v1"
+base_url = "http://localhost:8217/v1"
 requires_openai_auth = true
 ```
 
@@ -97,7 +97,7 @@ requires_openai_auth = true
 
 ## 🖥️ Management Panel
 
-When enabled, open `http://localhost:8317/manage`.
+When enabled, open `http://localhost:8217/manage`.
 
 - The server can host bundled SPA assets or auto-fetch panel assets at runtime.
 - Panel source is maintained separately at [bjxg/aigw-panel](https://github.com/bjxg/aigw-panel).

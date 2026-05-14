@@ -1057,7 +1057,7 @@ func TestReloadConfigUsesMirroredAuthDir(t *testing.T) {
 	}
 
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("port: 8317\n"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("port: 8217\n"), 0o644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
@@ -1088,7 +1088,7 @@ func TestReloadConfigUsesMirroredAuthDir(t *testing.T) {
 func TestStartFailsWhenAuthDirMissing(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("port: 8317\n"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("port: 8217\n"), 0o644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}
 	authDir := filepath.Join(tmpDir, "missing-auth")

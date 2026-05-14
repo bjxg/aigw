@@ -11,7 +11,7 @@ func TestLoadConfigDefaultsDisableControlPanel(t *testing.T) {
 	t.Parallel()
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(configPath, []byte("port: 8317\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("port: 8217\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -67,12 +67,12 @@ func TestSaveConfigPreserveCommentsOmitsDisableControlPanelWhenDefaultFalse(t *t
 	t.Parallel()
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(configPath, []byte("port: 8317\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("port: 8217\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	cfg := &Config{
-		Port: 8317,
+		Port: 8217,
 		RemoteManagement: RemoteManagement{
 			DisableControlPanel:   false,
 			PanelGitHubRepository: DefaultPanelGitHubRepository,
@@ -101,12 +101,12 @@ func TestSaveConfigPreserveCommentsKeepsDisableControlPanelTrue(t *testing.T) {
 	t.Parallel()
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(configPath, []byte("port: 8317\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("port: 8217\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	cfg := &Config{
-		Port: 8317,
+		Port: 8217,
 		RemoteManagement: RemoteManagement{
 			DisableControlPanel:   true,
 			PanelGitHubRepository: DefaultPanelGitHubRepository,

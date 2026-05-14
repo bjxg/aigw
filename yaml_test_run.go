@@ -9,7 +9,7 @@ import (
 
 func main() {
 	yamlData := `
-port: 8317
+port: 8217
 redis:
   enable: true
   addr: "127.0.0.1:6379"

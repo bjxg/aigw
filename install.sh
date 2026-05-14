@@ -16,7 +16,7 @@ SYM_OK="✓"; SYM_FAIL="✗"; SYM_ARROW="→"; SYM_DOT="·"; SYM_STAR="★"
 
 DOCKER_IMAGE_DEFAULT="ghcr.io/bjxg/aigw:latest"
 CONTAINER_NAME="aigw"
-DEFAULT_PORT=8317
+DEFAULT_PORT=8217
 TOTAL_STEPS=6
 OS_NAME="$(uname -s)"
 
@@ -618,7 +618,7 @@ status_cmd() {
   load_env
   local port secret root_code panel_code latest
   port="\$(extract_port)"
-  port="\${port:-\${aigw_PORT:-8317}}"
+  port="\${port:-\${aigw_PORT:-8217}}"
   secret="\$(extract_secret)"
   root_code="\$(http_code "http://127.0.0.1:\${port}/")"
   panel_code="\$(http_code "http://127.0.0.1:\${port}/manage")"
