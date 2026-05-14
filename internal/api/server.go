@@ -357,6 +357,9 @@ func (s *Server) setupRoutes() {
 	s.engine.GET("/management.html", s.serveManagementControlPanel)
 	s.engine.GET("/manage", s.serveManagementControlPanel)
 	s.engine.GET("/manage/*filepath", s.serveManagementControlPanel)
+	// Shared panel assets (JS/CSS built by Vite) are referenced with absolute /assets/... paths
+	// from both /manage and /user SPAs, so we expose them at the root level.
+	s.engine.GET("/assets/*filepath", s.servePanelAsset)
 	openaiHandlers := openai.NewOpenAIAPIHandler(s.handlers)
 	geminiHandlers := gemini.NewGeminiAPIHandler(s.handlers)
 	geminiCLIHandlers := gemini.NewGeminiCLIAPIHandler(s.handlers)
@@ -835,6 +838,28 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 	// HTML files should not be cached – always serve fresh.
 	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 	c.File(htmlFile)
+}
+
+// servePanelAsset serves shared static assets (JS, CSS, images, etc.) from the panel directory.
+// Vite builds manage.html and user.html with absolute /assets/... paths, so we expose
+// them at the root level for both SPAs.
+func (s *Server) servePanelAsset(c *gin.Context) {
+	panelDir := s.resolvePanelDir()
+	if panelDir == "" {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	reqPath := strings.TrimSpace(c.Request.URL.Path)
+	cleanPath := filepath.Clean(strings.TrimPrefix(reqPath, "/"))
+	if cleanPath != "." && !strings.Contains(cleanPath, "..") {
+		candidate := filepath.Join(panelDir, cleanPath)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			s.serveStaticFileWithCompression(c, candidate)
+			return
+		}
+	}
+	c.AbortWithStatus(http.StatusNotFound)
 }
 
 func (s *Server) serveUserControlPanel(c *gin.Context) {
