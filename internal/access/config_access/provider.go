@@ -5,28 +5,41 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v6/sdk/access"
 	sdkconfig "github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
 )
 
+var currentProvider *provider
+
 // Register ensures the config-access provider is available to the access manager.
+// When the provider already exists, its key map is hot-reloaded so the change
+// is visible to every manager that holds the old reference.
 func Register(cfg *sdkconfig.SDKConfig) {
 	if cfg == nil {
 		sdkaccess.UnregisterProvider(sdkaccess.AccessProviderTypeConfigAPIKey)
+		currentProvider = nil
 		return
 	}
 
 	keyConfigs := buildKeyConfigMap(cfg)
 	if len(keyConfigs) == 0 {
 		sdkaccess.UnregisterProvider(sdkaccess.AccessProviderTypeConfigAPIKey)
+		currentProvider = nil
 		return
 	}
 
+	if currentProvider != nil {
+		currentProvider.updateKeys(keyConfigs)
+		return
+	}
+
+	currentProvider = newProvider(sdkaccess.DefaultAccessProviderName, keyConfigs)
 	sdkaccess.RegisterProvider(
 		sdkaccess.AccessProviderTypeConfigAPIKey,
-		newProvider(sdkaccess.DefaultAccessProviderName, keyConfigs),
+		currentProvider,
 	)
 }
 
@@ -111,6 +124,7 @@ type keyConfig struct {
 
 type provider struct {
 	name string
+	mu   sync.RWMutex
 	keys map[string]keyConfig
 }
 
@@ -120,6 +134,12 @@ func newProvider(name string, keyConfigs map[string]keyConfig) *provider {
 		providerName = sdkaccess.DefaultAccessProviderName
 	}
 	return &provider{name: providerName, keys: keyConfigs}
+}
+
+func (p *provider) updateKeys(keyConfigs map[string]keyConfig) {
+	p.mu.Lock()
+	p.keys = keyConfigs
+	p.mu.Unlock()
 }
 
 func (p *provider) Identifier() string {
@@ -133,7 +153,10 @@ func (p *provider) Authenticate(_ context.Context, r *http.Request) (*sdkaccess.
 	if p == nil {
 		return nil, sdkaccess.NewNotHandledError()
 	}
-	if len(p.keys) == 0 {
+	p.mu.RLock()
+	keys := p.keys
+	p.mu.RUnlock()
+	if len(keys) == 0 {
 		return nil, sdkaccess.NewNotHandledError()
 	}
 	authHeader := r.Header.Get("Authorization")
@@ -166,7 +189,7 @@ func (p *provider) Authenticate(_ context.Context, r *http.Request) (*sdkaccess.
 		if candidate.value == "" {
 			continue
 		}
-		if kc, ok := p.keys[candidate.value]; ok {
+		if kc, ok := keys[candidate.value]; ok {
 			metadata := map[string]string{
 				"source": candidate.source,
 			}

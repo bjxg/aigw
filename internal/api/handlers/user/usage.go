@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	configaccess "github.com/router-for-me/CLIProxyAPI/v6/internal/access/config_access"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/api/bodyutil"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
@@ -117,6 +118,7 @@ type userAPIKeyItem struct {
 	Name             string                `json:"name"`
 	Key              string                `json:"key"`
 	Disabled         bool                  `json:"disabled"`
+	CreatedAt        string                `json:"created_at"`
 	DailyLimit       int                   `json:"daily_limit"`
 	TotalQuota       int                   `json:"total_quota"`
 	SpendingLimit    float64               `json:"spending_limit"`
@@ -223,6 +225,7 @@ func (h *Handler) GetUserAPIKeys(c *gin.Context) {
 			Name:             k.Name,
 			Key:              k.Key,
 			Disabled:         k.Disabled,
+			CreatedAt:        k.CreatedAt,
 			DailyLimit:       k.DailyLimit,
 			TotalQuota:       k.TotalQuota,
 			SpendingLimit:    k.SpendingLimit,
@@ -269,6 +272,11 @@ func (h *Handler) PostGenerateUserAPIKey(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Rebuild in-memory API key cache so the new key is immediately usable.
+	if h.cfg != nil {
+		configaccess.Register(&h.cfg.SDKConfig)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -318,6 +326,11 @@ func (h *Handler) ToggleUserAPIKey(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Rebuild in-memory API key cache so disabled keys take effect immediately.
+	if h.cfg != nil {
+		configaccess.Register(&h.cfg.SDKConfig)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "disabled": req.Disabled})
