@@ -28,7 +28,7 @@ func ResolvePanelDir(configFilePath string) string {
 	}
 
 	candidates := []string{
-		"/home/web/html/cliproxy-panel",
+		"/home/web/html/aigw-panel",
 	}
 	if staticDir := StaticDir(configFilePath); staticDir != "" {
 		candidates = append(candidates, staticDir)

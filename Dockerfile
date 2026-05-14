@@ -66,28 +66,28 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -X 'github.com/router-for-me/CLIProxyAPI/v6/internal/buildinfo.FrontendVersion=${UI_VERSION}' \
     -X 'github.com/router-for-me/CLIProxyAPI/v6/internal/buildinfo.FrontendCommit=${FRONTEND_COMMIT}' \
     -X 'github.com/router-for-me/CLIProxyAPI/v6/internal/buildinfo.FrontendRef=${FRONTEND_REF}'" \
-  -o ./CLIProxyAPI ./cmd/server/
+  -o ./aigw ./cmd/server/
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM alpine:3.22.0
 
 RUN apk add --no-cache tzdata ca-certificates
 
-RUN mkdir -p /CLIProxyAPI/panel
+RUN mkdir -p /aigw/panel
 
-COPY --from=backend-builder /app/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
-COPY --from=frontend-builder /frontend/dist/ /CLIProxyAPI/panel/
+COPY --from=backend-builder /app/aigw /aigw/aigw
+COPY --from=frontend-builder /frontend/dist/ /aigw/panel/
 
-COPY config.example.yaml /CLIProxyAPI/config.example.yaml
+COPY config.example.yaml /aigw/config.example.yaml
 
-WORKDIR /CLIProxyAPI
+WORKDIR /aigw
 
 EXPOSE 8317
 
 ENV TZ=Asia/Shanghai \
-    MANAGEMENT_PANEL_DIR=/CLIProxyAPI/panel \
-    aigw_LOCALE=zh
+    MANAGEMENT_PANEL_DIR=/aigw/panel \
+    AIGW_LOCALE=zh
 
 RUN cp /usr/share/zoneinfo/${TZ} /etc/localtime && echo "${TZ}" > /etc/timezone
 
-CMD ["./CLIProxyAPI"]
+CMD ["./aigw"]

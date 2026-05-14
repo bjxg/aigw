@@ -1,7 +1,7 @@
 services:
   aigw:
-    image: ${CLI_PROXY_IMAGE:-ghcr.io/bjxg/aigw:latest}
-    pull_policy: ${CLI_PROXY_PULL_POLICY:-always}
+    image: ${AIGW_IMAGE:-ghcr.io/bjxg/aigw:latest}
+    pull_policy: ${AIGW_PULL_POLICY:-always}
     build:
       context: .
       dockerfile: Dockerfile
@@ -15,10 +15,10 @@ services:
         FRONTEND_COMMIT: ${FRONTEND_COMMIT:-}
     container_name: aigw
     environment:
-      aigw_LOCALE: ${aigw_LOCALE:-zh}
-      LANG: ${aigw_LANG:-C.UTF-8}
-      LANGUAGE: ${aigw_LANGUAGE:-en_US:en}
-      LC_ALL: ${aigw_LANG:-C.UTF-8}
+      AIGW_LOCALE: ${AIGW_LOCALE:-zh}
+      LANG: ${AIGW_LANG:-C.UTF-8}
+      LANGUAGE: ${AIGW_LANGUAGE:-en_US:en}
+      LC_ALL: ${AIGW_LANG:-C.UTF-8}
     ports:
       - "8217:8217"
       - "127.0.0.1:8085:8085"
@@ -27,7 +27,7 @@ services:
       - "127.0.0.1:51121:51121"
       - "127.0.0.1:11451:11451"
     volumes:
-      - ${CLI_PROXY_CONFIG_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/config.yaml}:/CLIProxyAPI/config.yaml
-      - ${CLI_PROXY_LOG_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/logs}:/CLIProxyAPI/logs
-      - ${CLI_PROXY_DATA_PATH:-${aigw_PROJECT_DIR:-${PWD:-.}}/data}:/CLIProxyAPI/data
+      - ${AIGW_CONFIG_PATH:-${AIGW_PROJECT_DIR:-${PWD:-.}}/config.yaml}:/aigw/config.yaml
+      - ${AIGW_LOG_PATH:-${AIGW_PROJECT_DIR:-${PWD:-.}}/logs}:/aigw/logs
+      - ${AIGW_DATA_PATH:-${AIGW_PROJECT_DIR:-${PWD:-.}}/data}:/aigw/data
     restart: unless-stopped

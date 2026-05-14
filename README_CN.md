@@ -70,14 +70,14 @@ docker compose up -d
 编辑 `config.yaml` 添加你的 API 密钥，然后重启：
 
 ```bash
-docker compose restart cli-proxy-api
+docker compose restart aigw
 ```
 
 启动后常用入口：
 
 - API 地址：`http://localhost:8217`
 - Web 面板：`http://localhost:8217/manage`
-- 查看日志：`docker compose logs -f cli-proxy-api`
+- 查看日志：`docker compose logs -f aigw`
 
 默认情况下，客户端 API 路由需要 API Key；如需在未配置的情况下运行，可设置 `allow-unauthenticated: true`（生产环境不推荐）。
 

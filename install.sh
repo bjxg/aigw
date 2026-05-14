@@ -29,7 +29,7 @@ case "${OS_NAME}" in
         ;;
 esac
 
-INSTALL_DIR="${aigw_DIR:-$DEFAULT_INSTALL_DIR}"
+INSTALL_DIR="${AIGW_DIR:-$DEFAULT_INSTALL_DIR}"
 
 SCRIPT_LOCALE=""
 CFG_PORT="${DEFAULT_PORT}"
@@ -89,7 +89,7 @@ normalize_locale() {
 
 detect_default_locale() {
     local candidate
-    candidate="$(normalize_locale "${aigw_LOCALE:-}")"
+    candidate="$(normalize_locale "${AIGW_LOCALE:-}")"
     if [[ -n "$candidate" ]]; then
         echo "$candidate"
         return
@@ -380,11 +380,11 @@ load_existing_state() {
     if [[ -f "${INSTALL_DIR}/.env" ]]; then
         # shellcheck disable=SC1090
         set -a && . "${INSTALL_DIR}/.env" && set +a
-        if [[ -n "${aigw_LOCALE:-}" ]]; then
-            set_locale "${aigw_LOCALE}"
+        if [[ -n "${AIGW_LOCALE:-}" ]]; then
+            set_locale "${AIGW_LOCALE}"
         fi
-        if [[ -n "${CLI_PROXY_PLATFORM:-}" ]]; then
-            DOCKER_PLATFORM="${CLI_PROXY_PLATFORM}"
+        if [[ -n "${AIGW_PLATFORM:-}" ]]; then
+            DOCKER_PLATFORM="${AIGW_PLATFORM}"
         fi
     fi
 
@@ -481,17 +481,17 @@ YAML
 
 write_env() {
     cat >"${INSTALL_DIR}/.env" <<EOF
-CLI_PROXY_IMAGE=${CLI_PROXY_IMAGE:-$DOCKER_IMAGE_DEFAULT}
-CLI_PROXY_PLATFORM=${DOCKER_PLATFORM}
-aigw_CONTAINER_NAME=${CONTAINER_NAME}
-aigw_INSTALL_DIR=${INSTALL_DIR}
-aigw_LOCALE=${SCRIPT_LOCALE}
-aigw_LANG=$(lang_tag)
-aigw_LANGUAGE=$(language_tag)
-aigw_PORT=${CFG_PORT}
-CLI_PROXY_CONFIG_PATH=${INSTALL_DIR}/config.yaml
-CLI_PROXY_LOG_PATH=${INSTALL_DIR}/logs
-CLI_PROXY_DATA_PATH=${INSTALL_DIR}/data
+AIGW_IMAGE=${AIGW_IMAGE:-$DOCKER_IMAGE_DEFAULT}
+AIGW_PLATFORM=${DOCKER_PLATFORM}
+AIGW_CONTAINER_NAME=${CONTAINER_NAME}
+AIGW_INSTALL_DIR=${INSTALL_DIR}
+AIGW_LOCALE=${SCRIPT_LOCALE}
+AIGW_LANG=$(lang_tag)
+AIGW_LANGUAGE=$(language_tag)
+AIGW_PORT=${CFG_PORT}
+AIGW_CONFIG_PATH=${INSTALL_DIR}/config.yaml
+AIGW_LOG_PATH=${INSTALL_DIR}/logs
+AIGW_DATA_PATH=${INSTALL_DIR}/data
 TZ=${TZ_VALUE}
 EOF
 }
@@ -500,25 +500,25 @@ write_compose() {
     cat >"${INSTALL_DIR}/docker-compose.yml" <<'YAML'
 services:
   aigw:
-    image: ${CLI_PROXY_IMAGE}
-    platform: ${CLI_PROXY_PLATFORM}
-    container_name: ${aigw_CONTAINER_NAME}
+    image: ${AIGW_IMAGE}
+    platform: ${AIGW_PLATFORM}
+    container_name: ${AIGW_CONTAINER_NAME}
     pull_policy: always
     ports:
-      - "${aigw_PORT}:${aigw_PORT}"
+      - "${AIGW_PORT}:${AIGW_PORT}"
     volumes:
-      - ${CLI_PROXY_CONFIG_PATH}:/CLIProxyAPI/config.yaml
-      - ${CLI_PROXY_LOG_PATH}:/CLIProxyAPI/logs
-      - ${CLI_PROXY_DATA_PATH}:/CLIProxyAPI/data
+      - ${AIGW_CONFIG_PATH}:/aigw/config.yaml
+      - ${AIGW_LOG_PATH}:/aigw/logs
+      - ${AIGW_DATA_PATH}:/aigw/data
     environment:
       TZ: ${TZ}
-      aigw_LOCALE: ${aigw_LOCALE}
-      LANG: ${aigw_LANG}
-      LANGUAGE: ${aigw_LANGUAGE}
-      LC_ALL: ${aigw_LANG}
-      PORT: ${aigw_PORT}
+      AIGW_LOCALE: ${AIGW_LOCALE}
+      LANG: ${AIGW_LANG}
+      LANGUAGE: ${AIGW_LANGUAGE}
+      LC_ALL: ${AIGW_LANG}
+      PORT: ${AIGW_PORT}
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:${aigw_PORT}/ >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:${AIGW_PORT}/ >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -565,14 +565,14 @@ normalize_locale() {
 load_env() {
   # shellcheck disable=SC1090
   set -a && . "\${ENV_FILE}" && set +a
-  aigw_LOCALE="\$(normalize_locale "\${aigw_LOCALE:-en}")"
-  if [[ -z "\${aigw_LOCALE}" ]]; then
-    aigw_LOCALE="en"
+  AIGW_LOCALE="\$(normalize_locale "\${AIGW_LOCALE:-en}")"
+  if [[ -z "\${AIGW_LOCALE}" ]]; then
+    AIGW_LOCALE="en"
   fi
 }
 
 is_zh() {
-  [[ "\${aigw_LOCALE}" == "zh" ]]
+  [[ "\${AIGW_LOCALE}" == "zh" ]]
 }
 
 say() {
@@ -618,24 +618,24 @@ status_cmd() {
   load_env
   local port secret root_code panel_code latest
   port="\$(extract_port)"
-  port="\${port:-\${aigw_PORT:-8217}}"
+  port="\${port:-\${AIGW_PORT:-8217}}"
   secret="\$(extract_secret)"
   root_code="\$(http_code "http://127.0.0.1:\${port}/")"
   panel_code="\$(http_code "http://127.0.0.1:\${port}/manage")"
 
   say "aigw 部署状态" "aigw deployment status"
   echo "  Install Dir : \${INSTALL_DIR}"
-  echo "  Image       : \${CLI_PROXY_IMAGE}"
-  echo "  Platform    : \${CLI_PROXY_PLATFORM}"
-  echo "  Locale      : \${aigw_LOCALE}"
+  echo "  Image       : \${AIGW_IMAGE}"
+  echo "  Platform    : \${AIGW_PLATFORM}"
+  echo "  Locale      : \${AIGW_LOCALE}"
   echo "  Port        : \${port}"
-  echo "  Container   : \${aigw_CONTAINER_NAME}"
+  echo "  Container   : \${AIGW_CONTAINER_NAME}"
   echo "  API /       : HTTP \${root_code}"
   echo "  Panel /manage: HTTP \${panel_code}"
 
-  if docker inspect "\${aigw_CONTAINER_NAME}" >/dev/null 2>&1; then
-    echo "  Runtime     : \$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "\${aigw_CONTAINER_NAME}")"
-    echo "  Started At  : \$(docker inspect -f '{{.State.StartedAt}}' "\${aigw_CONTAINER_NAME}")"
+  if docker inspect "\${AIGW_CONTAINER_NAME}" >/dev/null 2>&1; then
+    echo "  Runtime     : \$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "\${AIGW_CONTAINER_NAME}")"
+    echo "  Started At  : \$(docker inspect -f '{{.State.StartedAt}}' "\${AIGW_CONTAINER_NAME}")"
   else
     say "  Runtime     : 容器不存在" "  Runtime     : container not found"
   fi
@@ -679,7 +679,7 @@ tui_cmd() {
     say "无法启动 TUI：未找到 management secret。" "Unable to start TUI: management secret not found."
     exit 1
   fi
-  exec docker exec -e aigw_LOCALE="\${aigw_LOCALE}" -it "\${aigw_CONTAINER_NAME}" /CLIProxyAPI/CLIProxyAPI -config /CLIProxyAPI/config.yaml -password "\${secret}" -tui
+  exec docker exec -e AIGW_LOCALE="\${AIGW_LOCALE}" -it "\${AIGW_CONTAINER_NAME}" /aigw/aigw -config /aigw/config.yaml -password "\${secret}" -tui
 }
 
 help_cmd() {
@@ -745,7 +745,7 @@ show_result() {
     fi
     echo ""
     echo "  Install Dir : ${INSTALL_DIR}"
-    echo "  Image       : ${CLI_PROXY_IMAGE:-$DOCKER_IMAGE_DEFAULT}"
+    echo "  Image       : ${AIGW_IMAGE:-$DOCKER_IMAGE_DEFAULT}"
     echo "  Platform    : ${DOCKER_PLATFORM}"
     echo "  Locale      : ${SCRIPT_LOCALE}"
     echo "  API         : http://${public_ip}:${CFG_PORT}/v1/chat/completions"
@@ -877,7 +877,7 @@ main() {
     install_helper_command
 
     step 4 "$(is_zh && echo "拉取 Docker 镜像" || echo "Pulling Docker image")"
-    spin_exec "${CLI_PROXY_IMAGE:-$DOCKER_IMAGE_DEFAULT}" docker pull "${CLI_PROXY_IMAGE:-$DOCKER_IMAGE_DEFAULT}"
+    spin_exec "${AIGW_IMAGE:-$DOCKER_IMAGE_DEFAULT}" docker pull "${AIGW_IMAGE:-$DOCKER_IMAGE_DEFAULT}"
 
     step 5 "$(is_zh && echo "启动或更新服务" || echo "Starting or updating service")"
     if [[ "$is_update" == "true" ]]; then

@@ -70,14 +70,14 @@ docker compose up -d
 Edit `config.yaml` to add your API keys, then restart:
 
 ```bash
-docker compose restart cli-proxy-api
+docker compose restart aigw
 ```
 
 After startup:
 
 - API endpoint: `http://localhost:8217`
 - Web panel: `http://localhost:8217/manage`
-- Logs: `docker compose logs -f cli-proxy-api`
+- Logs: `docker compose logs -f aigw`
 
 By default, client API routes require an API key. To run without keys, set `allow-unauthenticated: true` (not recommended for production).
 
