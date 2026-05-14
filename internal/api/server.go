@@ -193,10 +193,6 @@ type Server struct {
 	keepAliveOnTimeout func()
 	keepAliveHeartbeat chan struct{}
 	keepAliveStop      chan struct{}
-
-	publicLookupRateMu          sync.Mutex
-	publicLookupRate            map[string]publicLookupRateLimitEntry
-	publicLookupRateLastCleanup time.Time
 }
 
 // NewServer creates and initializes a new API server instance.
@@ -744,22 +740,8 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PATCH("/vertex-api-key", s.mgmt.PatchVertexCompatKey)
 		mgmt.DELETE("/vertex-api-key", s.mgmt.DeleteVertexCompatKey)
 
-		mgmt.GET("/model-definitions/:channel", s.mgmt.GetStaticModelDefinitions)
-	}
-
-	// Public endpoints - no management key required
-	pub := s.engine.Group("/v0/management/public")
-	pub.Use(s.managementAvailabilityMiddleware(), publicLookupNoStoreMiddleware(), s.publicLookupRateLimitMiddleware())
-	{
-		pub.GET("/usage", s.mgmt.GetPublicUsageByAPIKey)
-		pub.POST("/usage", s.mgmt.GetPublicUsageByAPIKey)
-		pub.GET("/usage/logs", s.mgmt.GetPublicUsageLogs)
-		pub.POST("/usage/logs", s.mgmt.GetPublicUsageLogs)
-		pub.GET("/usage/logs/:id/content", s.mgmt.GetPublicLogContent)
-		pub.POST("/usage/logs/:id/content", s.mgmt.GetPublicLogContent)
-		pub.GET("/usage/chart-data", s.mgmt.GetPublicUsageChartData)
-		pub.POST("/usage/chart-data", s.mgmt.GetPublicUsageChartData)
-	}
+    mgmt.GET("/model-definitions/:channel", s.mgmt.GetStaticModelDefinitions)
+    }
 }
 
 func (s *Server) managementAvailabilityMiddleware() gin.HandlerFunc {

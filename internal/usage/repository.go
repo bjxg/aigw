@@ -23,12 +23,6 @@ type LogRepository interface {
 	// QueryContentPart retrieves only one side (input/output/details) of the content.
 	QueryContentPart(ctx context.Context, id int64, part string) (LogContentPartResult, error)
 
-	// QueryContentForKey retrieves content only if the log belongs to the given API key ID.
-	QueryContentForKey(ctx context.Context, id int64, apiKeyID int64) (LogContentResult, error)
-
-	// QueryContentPartForKey retrieves one side of content, key-scoped by ID.
-	QueryContentPartForKey(ctx context.Context, id int64, apiKeyID int64, part string) (LogContentPartResult, error)
-
 	// QueryStats returns aggregated statistics over the filtered dataset.
 	QueryStats(ctx context.Context, params LogQueryParams) (LogStats, error)
 
@@ -70,9 +64,6 @@ type LogRepository interface {
 
 	// QueryTotalCostByKey returns the total accumulated cost for a given API key ID.
 	QueryTotalCostByKey(ctx context.Context, apiKeyID int64) (float64, error)
-
-	// QueryModelsForKey returns distinct models used by an API key ID.
-	QueryModelsForKey(ctx context.Context, apiKeyID int64, days int) ([]string, error)
 }
 
 // APIKeyRepository defines the interface for API key persistence operations.

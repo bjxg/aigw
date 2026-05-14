@@ -304,87 +304,6 @@ func (r *gormLogRepo) QueryContentPart(ctx context.Context, id int64, part strin
 	return LogContentPartResult{}, fmt.Errorf("usage: query log content part: not found (id=%d)", id)
 }
 
-// --- QueryContentForKey ---
-
-func (r *gormLogRepo) QueryContentForKey(ctx context.Context, id int64, apiKeyID int64) (LogContentResult, error) {
-	var result LogContentResult
-	var compression string
-	var inputCompressed, outputCompressed []byte
-	row := r.db.WithContext(ctx).Raw(`
-		SELECT logs.id, logs.model, content.compression, content.input_content, content.output_content
-		FROM request_logs logs
-		JOIN request_log_content content ON content.log_id = logs.id
-		WHERE logs.id = ? AND logs.api_key_id = ?
-	`, id, apiKeyID).Row()
-	err := row.Scan(&result.ID, &result.Model, &compression, &inputCompressed, &outputCompressed)
-	if err == nil && result.ID > 0 {
-		inputDecoded, err := decompressLogContent(compression, inputCompressed)
-		if err != nil {
-			return LogContentResult{}, err
-		}
-		outputDecoded, err := decompressLogContent(compression, outputCompressed)
-		if err != nil {
-			return LogContentResult{}, err
-		}
-		result.InputContent = inputDecoded
-		result.OutputContent = outputDecoded
-		return result, nil
-	}
-
-	return LogContentResult{}, fmt.Errorf("usage: query log content: not found (id=%d, api_key_id=%d)", id, apiKeyID)
-}
-
-// --- QueryContentPartForKey ---
-
-func (r *gormLogRepo) QueryContentPartForKey(ctx context.Context, id int64, apiKeyID int64, part string) (LogContentPartResult, error) {
-	part, err := normalizeLogContentPart(part)
-	if err != nil {
-		return LogContentPartResult{}, err
-	}
-
-	column := "input_content"
-	if part == "output" {
-		column = "output_content"
-	} else if part == "details" {
-		column = "detail_content"
-	}
-
-	var logID int64
-	var model string
-	var compression string
-	var content []byte
-	row := r.db.WithContext(ctx).Raw(fmt.Sprintf(`
-		SELECT logs.id, logs.model, content.compression, content.%s
-		FROM request_logs logs
-		JOIN request_log_content content ON content.log_id = logs.id
-		WHERE logs.id = ? AND logs.api_key_id = ?
-	`, column), id, apiKeyID).Row()
-	err = row.Scan(&logID, &model, &compression, &content)
-	if err == nil && logID > 0 {
-		decoded, err := decompressLogContent(compression, content)
-		if err != nil {
-			return LogContentPartResult{}, err
-		}
-		return LogContentPartResult{
-			ID:      logID,
-			Model:   model,
-			Content: decoded,
-			Part:    part,
-		}, nil
-	}
-
-	// Fallback: legacy inline content
-	if part == "details" {
-		var reqLog RequestLog
-		if err := r.db.WithContext(ctx).Select("id, model").Where("id = ? AND api_key_id = ?", id, apiKeyID).First(&reqLog).Error; err != nil {
-			return LogContentPartResult{}, fmt.Errorf("usage: query log content part: %w", err)
-		}
-		return LogContentPartResult{ID: reqLog.ID, Model: reqLog.Model, Part: part}, nil
-	}
-
-	return LogContentPartResult{}, fmt.Errorf("usage: query log content part: not found (id=%d)", id)
-}
-
 // --- QueryStats ---
 
 func (r *gormLogRepo) QueryStats(ctx context.Context, params LogQueryParams) (LogStats, error) {
@@ -844,25 +763,6 @@ func (r *gormLogRepo) QueryTotalCostByKey(ctx context.Context, apiKeyID int64) (
 	return total, nil
 }
 
-// --- QueryModelsForKey ---
-
-func (r *gormLogRepo) QueryModelsForKey(ctx context.Context, apiKeyID int64, days int) ([]string, error) {
-	if days < 1 {
-		days = 7
-	}
-	cutoff := CutoffStartUTC(days)
-
-	var results []string
-	err := r.db.WithContext(ctx).Model(&RequestLog{}).
-		Distinct("model").
-		Where("api_key_id = ? AND timestamp >= ? AND model != ''", apiKeyID, cutoff).
-		Pluck("model", &results).Error
-	if err != nil {
-		return nil, fmt.Errorf("usage: distinct models for key: %w", err)
-	}
-	return results, nil
-}
-
 // --- QueryDailySeriesForUser ---
 
 func (r *gormLogRepo) QueryDailySeriesForUser(ctx context.Context, userID int64, apiKeyID int64, days int) ([]DailySeriesPoint, error) {
@@ -1192,26 +1092,6 @@ func GormQueryLogContentPart(id int64, part string) (LogContentPartResult, error
 	return repo.QueryContentPart(context.Background(), id, part)
 }
 
-// GormQueryLogContentForKey is the GORM-backed implementation of QueryLogContentForKey.
-func GormQueryLogContentForKey(id int64, apiKeyID int64) (LogContentResult, error) {
-	gormDB := getGormDB()
-	if gormDB == nil {
-		return LogContentResult{}, fmt.Errorf("usage: database not initialised")
-	}
-	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryContentForKey(context.Background(), id, apiKeyID)
-}
-
-// GormQueryLogContentPartForKey is the GORM-backed implementation of QueryLogContentPartForKey.
-func GormQueryLogContentPartForKey(id int64, apiKeyID int64, part string) (LogContentPartResult, error) {
-	gormDB := getGormDB()
-	if gormDB == nil {
-		return LogContentPartResult{}, fmt.Errorf("usage: database not initialised")
-	}
-	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryContentPartForKey(context.Background(), id, apiKeyID, part)
-}
-
 // GormQueryDashboardKPI is the GORM-backed implementation of QueryDashboardKPI.
 func GormQueryDashboardKPI(days int) (DashboardKPI, error) {
 	gormDB := getGormDB()
@@ -1320,16 +1200,6 @@ func GormCountTotalByKey(apiKeyID int64) (int64, error) {
 	}
 	repo := &gormLogRepo{db: gormDB}
 	return repo.CountTotalByKey(context.Background(), apiKeyID)
-}
-
-// GormQueryModelsForKey is the GORM-backed implementation of QueryModelsForKey.
-func GormQueryModelsForKey(apiKeyID int64, days int) ([]string, error) {
-	gormDB := getGormDB()
-	if gormDB == nil {
-		return make([]string, 0), nil
-	}
-	repo := &gormLogRepo{db: gormDB}
-	return repo.QueryModelsForKey(context.Background(), apiKeyID, days)
 }
 
 // GormQueryDailySeriesForUser is the GORM-backed implementation of QueryDailySeriesForUser.

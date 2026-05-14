@@ -387,11 +387,6 @@ func throughputSeriesFromBuckets(buckets []dashboardBucket) []DashboardThroughpu
 	return points
 }
 
-// QueryModelsForKey returns the distinct models used by a specific API key ID within the time range.
-func QueryModelsForKey(apiKeyID int64, days int) ([]string, error) {
-	return GormQueryModelsForKey(apiKeyID, days)
-}
-
 // QueryDailySeriesForUser returns per-day aggregated request count and token usage for a given user.
 func QueryDailySeriesForUser(userID int64, apiKeyID int64, days int) ([]DailySeriesPoint, error) {
 	return GormQueryDailySeriesForUser(userID, apiKeyID, days)
@@ -456,17 +451,6 @@ func QueryLogContent(id int64) (LogContentResult, error) {
 // for a single log entry.
 func QueryLogContentPart(id int64, part string) (LogContentPartResult, error) {
 	return GormQueryLogContentPart(id, part)
-}
-
-// QueryLogContentForKey retrieves log content for a single entry, but only if it belongs to the given API key.
-func QueryLogContentForKey(id int64, apiKeyID int64) (LogContentResult, error) {
-	return GormQueryLogContentForKey(id, apiKeyID)
-}
-
-// QueryLogContentPartForKey retrieves only one side (input/output) of the stored request/response content
-// for a single entry, but only if it belongs to the given API key.
-func QueryLogContentPartForKey(id int64, apiKeyID int64, part string) (LogContentPartResult, error) {
-	return GormQueryLogContentPartForKey(id, apiKeyID, part)
 }
 
 // DailySeriesPoint holds one day of aggregated usage data.

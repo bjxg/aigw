@@ -264,12 +264,6 @@ type ModelSnapshot struct {
 	TotalTokens   int64 `json:"total_tokens"`
 }
 
-// SanitizeForPublic strips sensitive fields from all request details in the snapshot.
-// This MUST be called before returning data through any public (unauthenticated) endpoint.
-func (s *StatisticsSnapshot) SanitizeForPublic() {
-	// No-op: Details are no longer stored in the snapshot.
-}
-
 var defaultRequestStatistics = NewRequestStatistics()
 
 // GetRequestStatistics returns the shared statistics store.

@@ -45,57 +45,6 @@ func (h *Handler) ExportUsageStatistics(c *gin.Context) {
 	})
 }
 
-// GetPublicUsageByAPIKey returns usage statistics for a specific API key.
-// This endpoint is designed for public access (no management key required).
-func (h *Handler) GetPublicUsageByAPIKey(c *gin.Context) {
-	req, status, message := readPublicLookupRequest(c)
-	if message != "" {
-		c.JSON(status, gin.H{"error": message})
-		return
-	}
-
-	apiKey := req.APIKey
-	if apiKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "api_key parameter is required"})
-		return
-	}
-
-	var snapshot usage.StatisticsSnapshot
-	if h != nil && h.usageStats != nil {
-		snapshot = h.usageStats.Snapshot()
-	}
-
-	// Find the matching API key entry
-	apiData, found := snapshot.APIs[apiKey]
-	if !found {
-		c.JSON(http.StatusOK, gin.H{
-			"usage": usage.StatisticsSnapshot{
-				APIs: map[string]usage.APISnapshot{},
-			},
-			"api_key": apiKey,
-			"found":   false,
-		})
-		return
-	}
-
-	// Return only the matched API key's data
-	filteredSnapshot := usage.StatisticsSnapshot{
-		APIs: map[string]usage.APISnapshot{
-			apiKey: apiData,
-		},
-	}
-
-	// SECURITY: Strip sensitive fields (provider API keys, auth indices)
-	// from the public response to prevent credential leakage.
-	filteredSnapshot.SanitizeForPublic()
-
-	c.JSON(http.StatusOK, gin.H{
-		"usage":   filteredSnapshot,
-		"api_key": apiKey,
-		"found":   true,
-	})
-}
-
 // ImportUsageStatistics merges a previously exported usage snapshot into memory.
 func (h *Handler) ImportUsageStatistics(c *gin.Context) {
 	if h == nil || h.usageStats == nil {
