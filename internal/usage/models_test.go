@@ -38,8 +38,8 @@ func setupGormTestDB(t *testing.T) *gorm.DB {
 
 func TestAllModels_ReturnsAllModels(t *testing.T) {
 	models := AllModels()
-	if len(models) != 12 {
-		t.Errorf("AllModels() returned %d models, want 12", len(models))
+	if len(models) != 13 {
+		t.Errorf("AllModels() returned %d models, want 13", len(models))
 	}
 }
 
@@ -64,6 +64,8 @@ func TestAutoMigrate_AllModels(t *testing.T) {
 		"routing_config",
 		"proxy_pool",
 		"runtime_settings",
+		"user",
+		"oauth_sessions",
 	}
 
 	for _, table := range expectedTables {

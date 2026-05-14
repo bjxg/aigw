@@ -487,10 +487,10 @@ func (r *gormLogRepo) queryUserFilterItemsGorm(ctx context.Context, cutoff time.
 	var results []UserFilterItem
 	err := r.db.WithContext(ctx).
 		Table("request_logs").
-		Select("DISTINCT users.id, users.name").
-		Joins("JOIN users ON users.id = request_logs.user_id").
+		Select("DISTINCT \"user\".id, \"user\".name").
+		Joins("JOIN \"user\" ON \"user\".id = request_logs.user_id").
 		Where("request_logs.timestamp >= ? AND request_logs.user_id IS NOT NULL", cutoff).
-		Order("users.name").
+		Order("\"user\".name").
 		Find(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("usage: query user filter items: %w", err)
