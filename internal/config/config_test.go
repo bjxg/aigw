@@ -63,7 +63,6 @@ func TestSanitizeRoutingPreservesChannelGroupStrategy(t *testing.T) {
 	}
 }
 
-
 func TestSaveConfigPreserveCommentsOmitsDisableControlPanelWhenDefaultFalse(t *testing.T) {
 	t.Parallel()
 
