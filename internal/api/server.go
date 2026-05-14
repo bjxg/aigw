@@ -740,8 +740,8 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PATCH("/vertex-api-key", s.mgmt.PatchVertexCompatKey)
 		mgmt.DELETE("/vertex-api-key", s.mgmt.DeleteVertexCompatKey)
 
-    mgmt.GET("/model-definitions/:channel", s.mgmt.GetStaticModelDefinitions)
-    }
+		mgmt.GET("/model-definitions/:channel", s.mgmt.GetStaticModelDefinitions)
+	}
 }
 
 func (s *Server) managementAvailabilityMiddleware() gin.HandlerFunc {

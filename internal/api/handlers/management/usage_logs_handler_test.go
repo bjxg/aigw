@@ -247,5 +247,3 @@ func TestGetLogContent_ReturnsRequestDetailsPart(t *testing.T) {
 		t.Fatalf("unexpected details payload: %+v", payload)
 	}
 }
-
-
