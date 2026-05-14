@@ -82,7 +82,7 @@ COPY config.example.yaml /aigw/config.example.yaml
 
 WORKDIR /aigw
 
-EXPOSE 8317
+EXPOSE 8217
 
 ENV TZ=Asia/Shanghai \
     MANAGEMENT_PANEL_DIR=/aigw/panel \
