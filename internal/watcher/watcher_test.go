@@ -13,7 +13,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/watcher/diff"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/watcher/synthesizer"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v6/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	"gopkg.in/yaml.v3"
 )
@@ -194,7 +193,7 @@ func TestReloadConfigIfChanged_TriggersOnChangeAndSkipsUnchanged(t *testing.T) {
 	}
 }
 
-func TestStartAndStopSuccessWithoutAuthDir(t *testing.T) {
+func TestStartAndStopSuccessWithConfigOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte("port: 8217\n"), 0o644); err != nil {
@@ -544,77 +543,6 @@ func TestStopConfigReloadTimerSafeWhenNil(t *testing.T) {
 	w.configReloadMu.Unlock()
 	time.Sleep(1 * time.Millisecond)
 	w.stopConfigReloadTimer()
-}
-
-func TestPersistAsyncEarlyReturns(t *testing.T) {
-	var nilWatcher *Watcher
-	nilWatcher.persistConfigAsync()
-
-	w := &Watcher{}
-	w.persistConfigAsync()
-}
-
-type configPersister struct {
-	configCalls int32
-}
-
-func (p *configPersister) PersistConfig(context.Context) error {
-	atomic.AddInt32(&p.configCalls, 1)
-	return fmt.Errorf("persist config error")
-}
-
-func TestPersistAsyncErrorPaths(t *testing.T) {
-	p := &configPersister{}
-	w := &Watcher{storePersister: p}
-	w.persistConfigAsync()
-	time.Sleep(30 * time.Millisecond)
-	if atomic.LoadInt32(&p.configCalls) != 1 {
-		t.Fatalf("expected PersistConfig to be called once, got %d", p.configCalls)
-	}
-}
-
-type stubStore struct {
-	cfgPersisted int32
-}
-
-func (s *stubStore) List(context.Context) ([]*coreauth.Auth, error) { return nil, nil }
-func (s *stubStore) Save(context.Context, *coreauth.Auth) (string, error) {
-	return "", nil
-}
-func (s *stubStore) Delete(context.Context, string) error { return nil }
-func (s *stubStore) PersistConfig(context.Context) error {
-	atomic.AddInt32(&s.cfgPersisted, 1)
-	return nil
-}
-
-func TestNewWatcherDetectsPersister(t *testing.T) {
-	store := &stubStore{}
-	orig := sdkAuth.GetTokenStore()
-	sdkAuth.RegisterTokenStore(store)
-	defer sdkAuth.RegisterTokenStore(orig)
-
-	w, err := NewWatcher("config.yaml", nil)
-	if err != nil {
-		t.Fatalf("NewWatcher failed: %v", err)
-	}
-	if w.storePersister == nil {
-		t.Fatal("expected storePersister to be set from token store")
-	}
-}
-
-func TestPersistConfigAsyncInvokesPersister(t *testing.T) {
-	store := &stubStore{}
-	w := &Watcher{storePersister: store}
-
-	w.persistConfigAsync()
-
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for atomic.LoadInt32(&store.cfgPersisted) != 1 {
-		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for PersistConfig call: cfg=%d", store.cfgPersisted)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
 }
 
 func TestScheduleConfigReloadDebounces(t *testing.T) {

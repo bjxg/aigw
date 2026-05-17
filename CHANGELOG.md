@@ -35,7 +35,7 @@ This release marks the initial transformation of the project from a full AI CLI 
 ### Architecture
 - `internal/auth/` and `internal/tui/` directories removed.
 - `internal/usage/` expanded to include user management responsibilities.
-- `internal/store/` streamlined for configuration persistence only.
+- Legacy `internal/store/` config/auth mirror removed.
 
 ### Notes
 - If OAuth, file authentication, or protocol translation capabilities are required, users should deploy **CliRelay** as an independent upstream and configure `aigw` to route traffic through it.

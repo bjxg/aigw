@@ -72,7 +72,6 @@ func (w *Watcher) reloadConfigIfChanged() {
 		w.clientsMutex.Lock()
 		w.lastConfigHash = finalHash
 		w.clientsMutex.Unlock()
-		w.persistConfigAsync()
 	}
 }
 

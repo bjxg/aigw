@@ -110,11 +110,9 @@ aigw/
 ├── cmd/server/               # Binary entry point
 ├── internal/api/             # HTTP server, management routes, middleware
 ├── internal/config/          # Config parsing, defaults, migrations
-├── internal/store/           # Local, Git, PostgreSQL, object-store persistence
 ├── internal/usage/           # SQLite / PostgreSQL DB, analytics, user management
 ├── internal/managementasset/ # /manage panel hosting and asset sync
 ├── sdk/                      # Reusable Go SDK, handlers, executors
-├── auths/                    # Local credential storage
 ├── examples/                 # SDK / custom provider examples
 └── docker-compose.yml        # Container deployment entry
 ```

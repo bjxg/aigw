@@ -110,11 +110,9 @@ aigw/
 ├── cmd/server/               # 二进制入口
 ├── internal/api/             # HTTP 服务、管理路由、中间件
 ├── internal/config/          # 配置解析、默认值、迁移
-├── internal/store/           # 本地、Git、PostgreSQL、对象存储持久化
 ├── internal/usage/           # SQLite / PostgreSQL 数据库、分析聚合、用户管理
 ├── internal/managementasset/ # /manage 面板托管与资源同步
 ├── sdk/                      # 可复用 Go SDK、handlers、executors
-├── auths/                    # 本地凭据存储
 ├── examples/                 # SDK / 自定义 provider 示例
 └── docker-compose.yml        # 容器部署入口
 ```

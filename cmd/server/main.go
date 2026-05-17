@@ -4,16 +4,11 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/joho/godotenv"
 	configaccess "github.com/router-for-me/CLIProxyAPI/v6/internal/access/config_access"
@@ -21,8 +16,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/cmd"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/misc"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/store"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
@@ -95,27 +88,6 @@ func main() {
 	var err error
 	var cfg *config.Config
 	var isCloudDeploy bool
-	var (
-		usePostgresStore     bool
-		pgStoreDSN           string
-		pgStoreSchema        string
-		pgStoreLocalPath     string
-		pgStoreInst          *store.PostgresStore
-		useGitStore          bool
-		gitStoreRemoteURL    string
-		gitStoreUser         string
-		gitStorePassword     string
-		gitStoreLocalPath    string
-		gitStoreInst         *store.GitTokenStore
-		gitStoreRoot         string
-		useObjectStore       bool
-		objectStoreEndpoint  string
-		objectStoreAccess    string
-		objectStoreSecret    string
-		objectStoreBucket    string
-		objectStoreLocalPath string
-		objectStoreInst      *store.ObjectTokenStore
-	)
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -130,67 +102,6 @@ func main() {
 		}
 	}
 
-	lookupEnv := func(keys ...string) (string, bool) {
-		for _, key := range keys {
-			if value, ok := os.LookupEnv(key); ok {
-				if trimmed := strings.TrimSpace(value); trimmed != "" {
-					return trimmed, true
-				}
-			}
-		}
-		return "", false
-	}
-	writableBase := util.WritablePath()
-	if value, ok := lookupEnv("PGSTORE_DSN", "pgstore_dsn"); ok {
-		usePostgresStore = true
-		pgStoreDSN = value
-	}
-	if usePostgresStore {
-		if value, ok := lookupEnv("PGSTORE_SCHEMA", "pgstore_schema"); ok {
-			pgStoreSchema = value
-		}
-		if value, ok := lookupEnv("PGSTORE_LOCAL_PATH", "pgstore_local_path"); ok {
-			pgStoreLocalPath = value
-		}
-		if pgStoreLocalPath == "" {
-			if writableBase != "" {
-				pgStoreLocalPath = writableBase
-			} else {
-				pgStoreLocalPath = wd
-			}
-		}
-		useGitStore = false
-	}
-	if value, ok := lookupEnv("GITSTORE_GIT_URL", "gitstore_git_url"); ok {
-		useGitStore = true
-		gitStoreRemoteURL = value
-	}
-	if value, ok := lookupEnv("GITSTORE_GIT_USERNAME", "gitstore_git_username"); ok {
-		gitStoreUser = value
-	}
-	if value, ok := lookupEnv("GITSTORE_GIT_TOKEN", "gitstore_git_token"); ok {
-		gitStorePassword = value
-	}
-	if value, ok := lookupEnv("GITSTORE_LOCAL_PATH", "gitstore_local_path"); ok {
-		gitStoreLocalPath = value
-	}
-	if value, ok := lookupEnv("OBJECTSTORE_ENDPOINT", "objectstore_endpoint"); ok {
-		useObjectStore = true
-		objectStoreEndpoint = value
-	}
-	if value, ok := lookupEnv("OBJECTSTORE_ACCESS_KEY", "objectstore_access_key"); ok {
-		objectStoreAccess = value
-	}
-	if value, ok := lookupEnv("OBJECTSTORE_SECRET_KEY", "objectstore_secret_key"); ok {
-		objectStoreSecret = value
-	}
-	if value, ok := lookupEnv("OBJECTSTORE_BUCKET", "objectstore_bucket"); ok {
-		objectStoreBucket = value
-	}
-	if value, ok := lookupEnv("OBJECTSTORE_LOCAL_PATH", "objectstore_local_path"); ok {
-		objectStoreLocalPath = value
-	}
-
 	// Check for cloud deploy mode only on first execution
 	// Read env var name in uppercase: DEPLOY
 	deployEnv := os.Getenv("DEPLOY")
@@ -199,146 +110,8 @@ func main() {
 	}
 
 	// Determine and load the configuration file.
-	// Prefer the Postgres store when configured, otherwise fallback to git or local files.
 	var configFilePath string
-	if usePostgresStore {
-		if pgStoreLocalPath == "" {
-			pgStoreLocalPath = wd
-		}
-		pgStoreLocalPath = filepath.Join(pgStoreLocalPath, "pgstore")
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		pgStoreInst, err = store.NewPostgresStore(ctx, store.PostgresStoreConfig{
-			DSN:      pgStoreDSN,
-			Schema:   pgStoreSchema,
-			SpoolDir: pgStoreLocalPath,
-		})
-		cancel()
-		if err != nil {
-			log.Errorf("failed to initialize postgres token store: %v", err)
-			return
-		}
-		examplePath := filepath.Join(wd, "config.example.yaml")
-		ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
-		if errBootstrap := pgStoreInst.Bootstrap(ctx, examplePath); errBootstrap != nil {
-			cancel()
-			log.Errorf("failed to bootstrap postgres-backed config: %v", errBootstrap)
-			return
-		}
-		cancel()
-		configFilePath = pgStoreInst.ConfigPath()
-		cfg, err = config.LoadConfigOptional(configFilePath, isCloudDeploy)
-		if err == nil {
-			log.Infof("postgres-backed config store enabled, workspace path: %s", pgStoreInst.WorkDir())
-		}
-	} else if useObjectStore {
-		if objectStoreLocalPath == "" {
-			if writableBase != "" {
-				objectStoreLocalPath = writableBase
-			} else {
-				objectStoreLocalPath = wd
-			}
-		}
-		objectStoreRoot := filepath.Join(objectStoreLocalPath, "objectstore")
-		resolvedEndpoint := strings.TrimSpace(objectStoreEndpoint)
-		useSSL := true
-		if strings.Contains(resolvedEndpoint, "://") {
-			parsed, errParse := url.Parse(resolvedEndpoint)
-			if errParse != nil {
-				log.Errorf("failed to parse object store endpoint %q: %v", objectStoreEndpoint, errParse)
-				return
-			}
-			switch strings.ToLower(parsed.Scheme) {
-			case "http":
-				useSSL = false
-			case "https":
-				useSSL = true
-			default:
-				log.Errorf("unsupported object store scheme %q (only http and https are allowed)", parsed.Scheme)
-				return
-			}
-			if parsed.Host == "" {
-				log.Errorf("object store endpoint %q is missing host information", objectStoreEndpoint)
-				return
-			}
-			resolvedEndpoint = parsed.Host
-			if parsed.Path != "" && parsed.Path != "/" {
-				resolvedEndpoint = strings.TrimSuffix(parsed.Host+parsed.Path, "/")
-			}
-		}
-		resolvedEndpoint = strings.TrimRight(resolvedEndpoint, "/")
-		objCfg := store.ObjectStoreConfig{
-			Endpoint:  resolvedEndpoint,
-			Bucket:    objectStoreBucket,
-			AccessKey: objectStoreAccess,
-			SecretKey: objectStoreSecret,
-			LocalRoot: objectStoreRoot,
-			UseSSL:    useSSL,
-			PathStyle: true,
-		}
-		objectStoreInst, err = store.NewObjectTokenStore(objCfg)
-		if err != nil {
-			log.Errorf("failed to initialize object token store: %v", err)
-			return
-		}
-		examplePath := filepath.Join(wd, "config.example.yaml")
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		if errBootstrap := objectStoreInst.Bootstrap(ctx, examplePath); errBootstrap != nil {
-			cancel()
-			log.Errorf("failed to bootstrap object-backed config: %v", errBootstrap)
-			return
-		}
-		cancel()
-		configFilePath = objectStoreInst.ConfigPath()
-		cfg, err = config.LoadConfigOptional(configFilePath, isCloudDeploy)
-		if err == nil {
-			if cfg == nil {
-				cfg = &config.Config{}
-			}
-			log.Infof("object-backed config store enabled, bucket: %s", objectStoreBucket)
-		}
-	} else if useGitStore {
-		if gitStoreLocalPath == "" {
-			if writableBase != "" {
-				gitStoreLocalPath = writableBase
-			} else {
-				gitStoreLocalPath = wd
-			}
-		}
-		gitStoreRoot = filepath.Join(gitStoreLocalPath, "gitstore")
-		gitStoreInst = store.NewGitTokenStore(gitStoreRemoteURL, gitStoreUser, gitStorePassword)
-		gitStoreInst.SetBaseDir(gitStoreRoot)
-		if errRepo := gitStoreInst.EnsureRepository(); errRepo != nil {
-			log.Errorf("failed to prepare git token store: %v", errRepo)
-			return
-		}
-		configFilePath = gitStoreInst.ConfigPath()
-		if configFilePath == "" {
-			configFilePath = filepath.Join(gitStoreRoot, "config", "config.yaml")
-		}
-		if _, statErr := os.Stat(configFilePath); errors.Is(statErr, fs.ErrNotExist) {
-			examplePath := filepath.Join(wd, "config.example.yaml")
-			if _, errExample := os.Stat(examplePath); errExample != nil {
-				log.Errorf("failed to find template config file: %v", errExample)
-				return
-			}
-			if errCopy := misc.CopyConfigTemplate(examplePath, configFilePath); errCopy != nil {
-				log.Errorf("failed to bootstrap git-backed config: %v", errCopy)
-				return
-			}
-			if errCommit := gitStoreInst.PersistConfig(context.Background()); errCommit != nil {
-				log.Errorf("failed to commit initial git-backed config: %v", errCommit)
-				return
-			}
-			log.Infof("git-backed config initialized from template: %s", configFilePath)
-		} else if statErr != nil {
-			log.Errorf("failed to inspect git-backed config: %v", statErr)
-			return
-		}
-		cfg, err = config.LoadConfigOptional(configFilePath, isCloudDeploy)
-		if err == nil {
-			log.Infof("git-backed config store enabled, repository path: %s", gitStoreRoot)
-		}
-	} else if configPath != "" {
+	if configPath != "" {
 		configFilePath = configPath
 		cfg, err = config.LoadConfigOptional(configPath, isCloudDeploy)
 	} else {

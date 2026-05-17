@@ -2,9 +2,6 @@
 package watcher
 
 import (
-	"context"
-	"time"
-
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	log "github.com/sirupsen/logrus"
 )
@@ -80,19 +77,4 @@ func BuildAPIKeyClients(cfg *config.Config) (int, int, int, int, int, int, int) 
 		}
 	}
 	return geminiAPIKeyCount, vertexCompatAPIKeyCount, claudeAPIKeyCount, codexAPIKeyCount, bedrockAPIKeyCount, openCodeGoAPIKeyCount, openAICompatCount
-}
-
-func (w *Watcher) persistConfigAsync() {
-	if w == nil || w.storePersister == nil {
-		return
-	}
-	// Persistence is intentionally detached from fsnotify handling so file events
-	// do not block. The goroutine owns a short timeout context and cleans itself up.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := w.storePersister.PersistConfig(ctx); err != nil {
-			log.Errorf("failed to persist config change: %v", err)
-		}
-	}()
 }

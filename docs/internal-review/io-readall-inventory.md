@@ -19,8 +19,6 @@
   管理接口与 OAuth 辅助路径混在一起。
 - `aigw/internal/api/handlers/management/api_tools.go`
   管理端代理调用与 OAuth token 刷新路径。
-- `aigw/internal/store/objectstore.go`
-  对象存储读取路径。
 - `aigw/internal/logging/request_logger.go`
   压缩内容解码与日志内容回读路径。
 

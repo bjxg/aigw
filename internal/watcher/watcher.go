@@ -11,15 +11,8 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"gopkg.in/yaml.v3"
 
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v6/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
-	log "github.com/sirupsen/logrus"
 )
-
-// storePersister captures persistence-capable token store methods used by the watcher.
-type storePersister interface {
-	PersistConfig(ctx context.Context) error
-}
 
 // Watcher manages file watching for configuration files.
 type Watcher struct {
@@ -39,7 +32,6 @@ type Watcher struct {
 	pendingUpdates    map[string]AuthUpdate
 	pendingOrder      []string
 	dispatchCancel    context.CancelFunc
-	storePersister    storePersister
 	oldConfigYaml     []byte
 }
 
@@ -75,12 +67,6 @@ func NewWatcher(configPath string, reloadCallback func(*config.Config)) (*Watche
 		watcher:        watcher,
 	}
 	w.dispatchCond = sync.NewCond(&w.dispatchMu)
-	if store := sdkAuth.GetTokenStore(); store != nil {
-		if persister, ok := store.(storePersister); ok {
-			w.storePersister = persister
-			log.Debug("persistence-capable token store detected; watcher will propagate persisted changes")
-		}
-	}
 	return w, nil
 }
 

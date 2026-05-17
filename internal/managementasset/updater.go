@@ -452,8 +452,7 @@ func fetchReleaseAssetByName(ctx context.Context, client *http.Client, releaseUR
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", httpUserAgent)
-	gitURL := strings.ToLower(strings.TrimSpace(os.Getenv("GITSTORE_GIT_URL")))
-	if tok := strings.TrimSpace(os.Getenv("GITSTORE_GIT_TOKEN")); tok != "" && strings.Contains(gitURL, "github.com") {
+	if tok := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); tok != "" && strings.Contains(strings.ToLower(releaseURL), "github.com") {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 
