@@ -107,10 +107,15 @@ func normalizeLogContentFormatValue(format string) string {
 	}
 }
 
+type userAPIKeyPathItem struct {
+	Path     string `json:"path"`
+	Protocol string `json:"protocol"`
+}
+
 type userAPIKeyGroupItem struct {
-	Name   string   `json:"name"`
-	Paths  []string `json:"paths"`
-	Models []string `json:"models"`
+	Name   string              `json:"name"`
+	Paths  []userAPIKeyPathItem `json:"paths"`
+	Models []string            `json:"models"`
 }
 
 type userAPIKeyItem struct {
@@ -153,9 +158,18 @@ func (h *Handler) GetUserAPIKeys(c *gin.Context) {
 	}
 
 	// Build lookup maps for routing config
-	pathRoutesByGroup := make(map[string][]string)
+	pathRoutesByGroup := make(map[string][]userAPIKeyPathItem)
 	for _, pr := range routingCfg.PathRoutes {
-		pathRoutesByGroup[pr.Group] = append(pathRoutesByGroup[pr.Group], pr.Path+"/v1")
+		suffix := ""
+		protocol := pr.Protocol
+		if protocol == "" || protocol == "openai" {
+			suffix = "/v1"
+			protocol = "openai"
+		}
+		pathRoutesByGroup[pr.Group] = append(pathRoutesByGroup[pr.Group], userAPIKeyPathItem{
+			Path:     pr.Path + suffix,
+			Protocol: protocol,
+		})
 	}
 	modelsByGroup := make(map[string][]string)
 	for _, cg := range routingCfg.ChannelGroups {
@@ -168,9 +182,9 @@ func (h *Handler) GetUserAPIKeys(c *gin.Context) {
 	for _, k := range keys {
 		groups := make([]userAPIKeyGroupItem, 0, len(k.AllowedChannelGroups))
 		if len(k.AllowedChannelGroups) == 0 {
-			paths := []string{"/v1"}
+			paths := []userAPIKeyPathItem{{Path: "/v1", Protocol: "openai"}}
 			if baseURL != "" {
-				paths = []string{baseURL + "/v1"}
+				paths = []userAPIKeyPathItem{{Path: baseURL + "/v1", Protocol: "openai"}}
 			}
 			allModels := registry.GetGlobalRegistry().GetAvailableModels("openai")
 			modelNames := make([]string, 0, len(allModels))
@@ -200,12 +214,15 @@ func (h *Handler) GetUserAPIKeys(c *gin.Context) {
 			for _, gName := range k.AllowedChannelGroups {
 				paths := pathRoutesByGroup[gName]
 				if paths == nil {
-					paths = []string{}
+					paths = []userAPIKeyPathItem{}
 				}
 				if baseURL != "" {
-					prefixed := make([]string, len(paths))
+					prefixed := make([]userAPIKeyPathItem, len(paths))
 					for i, p := range paths {
-						prefixed[i] = baseURL + p
+						prefixed[i] = userAPIKeyPathItem{
+							Path:     baseURL + p.Path,
+							Protocol: p.Protocol,
+						}
 					}
 					paths = prefixed
 				}

@@ -29,6 +29,7 @@ type RoutingPathRoute struct {
 	Group       string `yaml:"group" json:"group"`
 	StripPrefix bool   `yaml:"strip-prefix,omitempty" json:"strip-prefix,omitempty"`
 	Fallback    string `yaml:"fallback,omitempty" json:"fallback,omitempty"`
+	Protocol    string `yaml:"protocol,omitempty" json:"protocol,omitempty"`
 }
 
 func normalizeStringList(values []string, normalizer func(string) string) []string {
@@ -135,6 +136,7 @@ func (cfg *Config) SanitizeRouting() {
 		route.Path = internalrouting.NormalizeNamespacePath(route.Path)
 		route.Group = internalrouting.NormalizeGroupName(route.Group)
 		route.Fallback = internalrouting.NormalizeFallback(route.Fallback)
+		route.Protocol = strings.ToLower(strings.TrimSpace(route.Protocol))
 		if route.Path == "" || route.Group == "" {
 			continue
 		}
