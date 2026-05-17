@@ -1,21 +1,11 @@
 // clients.go implements watcher client lifecycle logic and persistence helpers.
-// It reloads clients, handles incremental auth file changes, and persists updates when supported.
 package watcher
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v6/internal/watcher/diff"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -52,93 +42,6 @@ func (w *Watcher) reloadClients(rescanAuth bool, affectedOAuthProviders []string
 		openCodeGoAPIKeyCount,
 		openAICompatCount,
 	)
-}
-
-func (w *Watcher) addOrUpdateClient(path string) {
-	data, errRead := os.ReadFile(path)
-	if errRead != nil {
-		log.Errorf("failed to read auth file %s: %v", filepath.Base(path), errRead)
-		return
-	}
-	if len(data) == 0 {
-		log.Debugf("ignoring empty auth file: %s", filepath.Base(path))
-		return
-	}
-
-	sum := sha256.Sum256(data)
-	curHash := hex.EncodeToString(sum[:])
-	normalized := w.normalizeAuthPath(path)
-
-	// Parse new auth content for diff comparison
-	var newAuth coreauth.Auth
-	if errParse := json.Unmarshal(data, &newAuth); errParse != nil {
-		log.Errorf("failed to parse auth file %s: %v", filepath.Base(path), errParse)
-		return
-	}
-
-	w.clientsMutex.Lock()
-
-	cfg := w.config
-	if cfg == nil {
-		log.Error("config is nil, cannot add or update client")
-		w.clientsMutex.Unlock()
-		return
-	}
-	if prev, ok := w.lastAuthHashes[normalized]; ok && prev == curHash {
-		log.Debugf("auth file unchanged (hash match), skipping reload: %s", filepath.Base(path))
-		w.clientsMutex.Unlock()
-		return
-	}
-
-	// Get old auth for diff comparison
-	var oldAuth *coreauth.Auth
-	if w.lastAuthContents != nil {
-		oldAuth = w.lastAuthContents[normalized]
-	}
-
-	// Compute and log field changes
-	if changes := diff.BuildAuthChangeDetails(oldAuth, &newAuth); len(changes) > 0 {
-		log.Debugf("auth field changes for %s:", filepath.Base(path))
-		for _, c := range changes {
-			log.Debugf("  %s", c)
-		}
-	}
-
-	// Update caches
-	w.lastAuthHashes[normalized] = curHash
-	if w.lastAuthContents == nil {
-		w.lastAuthContents = make(map[string]*coreauth.Auth)
-	}
-	w.lastAuthContents[normalized] = &newAuth
-
-	w.clientsMutex.Unlock() // Unlock before the callback
-
-	w.refreshAuthState(false)
-
-	if w.reloadCallback != nil {
-		log.Debugf("triggering server update callback after add/update")
-		w.reloadCallback(cfg)
-	}
-	w.persistAuthAsync(fmt.Sprintf("Sync auth %s", filepath.Base(path)), path)
-}
-
-func (w *Watcher) removeClient(path string) {
-	normalized := w.normalizeAuthPath(path)
-	w.clientsMutex.Lock()
-
-	cfg := w.config
-	delete(w.lastAuthHashes, normalized)
-	delete(w.lastAuthContents, normalized)
-
-	w.clientsMutex.Unlock() // Release the lock before the callback
-
-	w.refreshAuthState(false)
-
-	if w.reloadCallback != nil {
-		log.Debugf("triggering server update callback after removal")
-		w.reloadCallback(cfg)
-	}
-	w.persistAuthAsync(fmt.Sprintf("Remove auth %s", filepath.Base(path)), path)
 }
 
 func BuildAPIKeyClients(cfg *config.Config) (int, int, int, int, int, int, int) {
@@ -190,30 +93,6 @@ func (w *Watcher) persistConfigAsync() {
 		defer cancel()
 		if err := w.storePersister.PersistConfig(ctx); err != nil {
 			log.Errorf("failed to persist config change: %v", err)
-		}
-	}()
-}
-
-func (w *Watcher) persistAuthAsync(message string, paths ...string) {
-	if w == nil || w.storePersister == nil {
-		return
-	}
-	filtered := make([]string, 0, len(paths))
-	for _, p := range paths {
-		if trimmed := strings.TrimSpace(p); trimmed != "" {
-			filtered = append(filtered, trimmed)
-		}
-	}
-	if len(filtered) == 0 {
-		return
-	}
-	// Persistence is intentionally detached from fsnotify handling so file events
-	// do not block. The goroutine owns a short timeout context and cleans itself up.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := w.storePersister.PersistAuthFiles(ctx, message, filtered...); err != nil {
-			log.Errorf("failed to persist auth changes: %v", err)
 		}
 	}()
 }

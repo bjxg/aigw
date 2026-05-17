@@ -251,7 +251,7 @@ func normalizeAuth(a *coreauth.Auth) *coreauth.Auth {
 	return clone
 }
 
-func snapshotCoreAuths(cfg *config.Config, _ string) []*coreauth.Auth {
+func snapshotCoreAuths(cfg *config.Config) []*coreauth.Auth {
 	ctx := &synthesizer.SynthesisContext{
 		Config:      cfg,
 		Now:         time.Now(),

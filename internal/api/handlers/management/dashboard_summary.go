@@ -23,7 +23,6 @@ func (h *Handler) GetDashboardSummary(c *gin.Context) {
 	codexCount := 0
 	vertexCount := 0
 	openaiCount := 0
-	authFileCount := 0
 	apiKeyCount := 0
 
 	if cfg != nil {
@@ -68,7 +67,6 @@ func (h *Handler) GetDashboardSummary(c *gin.Context) {
 			"codex_keys":       codexCount,
 			"vertex_keys":      vertexCount,
 			"openai_providers": openaiCount,
-			"auth_files":       authFileCount,
 		},
 		"trends": trends,
 		"meta": gin.H{

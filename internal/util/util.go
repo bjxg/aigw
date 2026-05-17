@@ -4,7 +4,6 @@
 package util
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -68,25 +67,6 @@ func SetLogLevel(cfg *config.Config) {
 		log.SetLevel(newLevel)
 		log.Infof("log level changed from %s to %s (debug=%t)", currentLevel, newLevel, cfg.Debug)
 	}
-}
-
-// CountAuthFiles returns the number of auth records available through the provided Store.
-// For filesystem-backed stores, this reflects the number of JSON auth files under the configured directory.
-func CountAuthFiles[T any](ctx context.Context, store interface {
-	List(context.Context) ([]T, error)
-}) int {
-	if store == nil {
-		return 0
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	entries, err := store.List(ctx)
-	if err != nil {
-		log.Debugf("countAuthFiles: failed to list auth records: %v", err)
-		return 0
-	}
-	return len(entries)
 }
 
 // WritablePath returns the cleaned WRITABLE_PATH environment variable when it is set.

@@ -629,7 +629,7 @@ func (s *Service) Run(ctx context.Context) error {
 		s.rebindExecutors()
 	}
 
-	watcherWrapper, err = s.watcherFactory(s.configPath, resolveAuthDirFromStore(), reloadCallback)
+	watcherWrapper, err = s.watcherFactory(s.configPath, reloadCallback)
 	if err != nil {
 		return fmt.Errorf("cliproxy: failed to create watcher: %w", err)
 	}
@@ -647,7 +647,7 @@ func (s *Service) Run(ctx context.Context) error {
 	if err = watcherWrapper.Start(watcherCtx); err != nil {
 		return fmt.Errorf("cliproxy: failed to start watcher: %w", err)
 	}
-	log.Info("file watcher started for config and auth directory changes")
+	log.Info("file watcher started for config changes")
 
 	// Prefer core auth manager auto refresh if available.
 	if s.coreManager != nil {
@@ -1382,18 +1382,4 @@ func rewriteModelInfoName(name, oldID, newID string) string {
 func applyOAuthModelAlias(cfg *config.Config, provider, authKind string, models []*ModelInfo) []*ModelInfo {
 	// OAuth has been removed; model alias mapping no longer applies.
 	return models
-}
-
-// resolveAuthDirFromStore returns the auth directory path from the globally
-// registered token store. It is used when creating the file watcher since
-// auth-dir is no longer a configuration option.
-func resolveAuthDirFromStore() string {
-	if store := sdkAuth.GetTokenStore(); store != nil {
-		if provider, ok := store.(interface{ AuthDir() string }); ok {
-			if dir := strings.TrimSpace(provider.AuthDir()); dir != "" {
-				return dir
-			}
-		}
-	}
-	return ""
 }

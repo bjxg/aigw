@@ -50,7 +50,7 @@ func TestServiceRun_RegistersModelsForLoadedAuths(t *testing.T) {
 		configPath:     "/tmp/config.yaml",
 		tokenProvider:  startupTokenProviderStub{},
 		apiKeyProvider: startupAPIKeyProviderStub{},
-		watcherFactory: func(string, string, func(*config.Config)) (*WatcherWrapper, error) {
+		watcherFactory: func(string, func(*config.Config)) (*WatcherWrapper, error) {
 			return &WatcherWrapper{
 				start:                 func(context.Context) error { return nil },
 				stop:                  func() error { return nil },
