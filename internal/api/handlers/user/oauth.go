@@ -319,7 +319,10 @@ func (h *Handler) UserInfo(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"user": user})
+	c.JSON(http.StatusOK, gin.H{
+		"user":     user,
+		"help_url": strings.TrimSpace(h.cfg.Help.URL),
+	})
 }
 
 // Logout handles POST /user/logout.

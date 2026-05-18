@@ -139,6 +139,9 @@ type Config struct {
 	// Base is the public base configuration for the server.
 	Base BaseConfig `yaml:"base" json:"base"`
 
+	// Help configures the help link displayed in the frontend.
+	Help HelpConfig `yaml:"help,omitempty" json:"help,omitempty"`
+
 	// User configures frontend user portal defaults.
 	User UserConfig `yaml:"user" json:"user"`
 
@@ -430,6 +433,12 @@ type PayloadModelRule struct {
 type BaseConfig struct {
 	// URL is the public base URL used to prefix API endpoint addresses.
 	URL string `yaml:"url" json:"url"`
+}
+
+// HelpConfig configures the help link displayed in the frontend.
+type HelpConfig struct {
+	// URL is the help page link. When empty, the help link is hidden.
+	URL string `yaml:"url,omitempty" json:"url,omitempty"`
 }
 
 // UserConfig configures frontend user portal defaults.
