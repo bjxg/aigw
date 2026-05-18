@@ -337,6 +337,12 @@ func (h *Handler) PutConfigYAML(c *gin.Context) {
 		usage.ApplyStoredRuntimeSettings(newCfg)
 	}
 	h.cfg = newCfg
+	if h.authManager != nil {
+		h.authManager.SetConfig(h.cfg)
+	}
+	if h.onConfigChanged != nil {
+		h.onConfigChanged(h.cfg)
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "changed": []string{"config"}})
 }
 

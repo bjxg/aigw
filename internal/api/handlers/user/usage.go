@@ -280,6 +280,16 @@ func (h *Handler) PostGenerateUserAPIKey(c *gin.Context) {
 		return
 	}
 
+	maxCount := 5
+	if h.cfg != nil && h.cfg.User.APIKeysMaxCount > 0 {
+		maxCount = h.cfg.User.APIKeysMaxCount
+	}
+	currentKeys := usage.GormListAPIKeysByUserID(userID)
+	if len(currentKeys) >= maxCount {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "已达到密钥最大数量，不能继续创建密钥"})
+		return
+	}
+
 	channelGroups := h.cfg.User.DefaultChannelGroups
 	if channelGroups == nil {
 		channelGroups = []string{}

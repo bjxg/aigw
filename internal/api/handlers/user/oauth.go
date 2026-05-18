@@ -51,6 +51,14 @@ func NewHandler(cfg *config.Config) *Handler {
 	return h
 }
 
+// SetConfig updates the in-memory config reference when the server hot-reloads.
+func (h *Handler) SetConfig(cfg *config.Config) {
+	if h == nil || cfg == nil {
+		return
+	}
+	h.cfg = cfg
+}
+
 // initProvider initializes the OIDC provider and OAuth2 config.
 func (h *Handler) initProvider(ctx context.Context) error {
 	provider, err := oidc.NewProvider(ctx, h.cfg.OAuth.ProviderURL)

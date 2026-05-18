@@ -445,6 +445,8 @@ type HelpConfig struct {
 type UserConfig struct {
 	// DefaultChannelGroups is the default channel groups assigned to auto-generated API keys.
 	DefaultChannelGroups []string `yaml:"default-channel-groups" json:"default-channel-groups"`
+	// APIKeysMaxCount limits how many API keys a user can create. Defaults to 5 when unset.
+	APIKeysMaxCount int `yaml:"api-keys-max-count" json:"api-keys-max-count"`
 }
 
 // OAuthConfig configures OIDC authentication for frontend users.

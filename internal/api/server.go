@@ -174,6 +174,9 @@ type Server struct {
 	// management handler
 	mgmt *managementHandlers.Handler
 
+	// user handler
+	user *userHandlers.Handler
+
 	// ampModule is the Amp routing module for model mapping hot-reload
 	ampModule *ampmodule.AmpModule
 
@@ -479,6 +482,7 @@ func (s *Server) setupRoutes() {
 
 	// User OIDC routes (under /oidc so /user/* can be reserved for the SPA portal)
 	userHandler := userHandlers.NewHandler(s.cfg)
+	s.user = userHandler
 	oidcGroup := s.engine.Group("/oidc")
 	{
 		oidcGroup.GET("/authorize", userHandler.Authorize)
@@ -1499,6 +1503,9 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 	if s.mgmt != nil {
 		s.mgmt.SetConfig(cfg)
 		s.mgmt.SetAuthManager(s.handlers.AuthManager)
+	}
+	if s.user != nil {
+		s.user.SetConfig(cfg)
 	}
 
 	// Notify Amp module only when Amp config has changed.
