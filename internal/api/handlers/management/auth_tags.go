@@ -1,14 +1,11 @@
 package management
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 )
-
-const maxCustomAuthTags = 3
 
 var codexPlanDisplayTags = map[string]struct{}{
 	"business":   {},
@@ -151,14 +148,6 @@ func defaultAuthTags(provider string, metadata map[string]any) []string {
 		}
 	}
 	return tags
-}
-
-func normalizeEditableTags(values []string, max int) ([]string, error) {
-	normalized := normalizeTagList(values)
-	if max > 0 && len(normalized) > max {
-		return nil, fmt.Errorf("custom_tags supports at most %d items", max)
-	}
-	return normalized, nil
 }
 
 func normalizeTagList(values []string) []string {

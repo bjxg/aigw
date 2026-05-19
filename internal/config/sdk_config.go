@@ -44,26 +44,22 @@ type SDKConfig struct {
 	NonStreamKeepAliveInterval int `yaml:"nonstream-keepalive-interval,omitempty" json:"nonstream-keepalive-interval,omitempty"`
 }
 
-// RequestLogStorageConfig controls retention and cleanup of full request/response bodies.
+// RequestLogStorageConfig controls whether full request/response bodies are stored.
 type RequestLogStorageConfig struct {
 	// StoreContent toggles persistence of full request and response bodies.
 	// When false, new content is no longer written, but existing stored content is preserved.
 	StoreContent bool `yaml:"store-content" json:"store-content"`
 
-	// ContentRetentionDays defines how many days full request/response bodies are kept.
-	// 0 or less means keep full content indefinitely. Metadata rows remain available
-	// even after content is pruned.
+	// Deprecated: retained for config compatibility; cleanup is not scheduled from this field.
 	ContentRetentionDays int `yaml:"content-retention-days,omitempty" json:"content-retention-days,omitempty"`
 
-	// CleanupIntervalMinutes controls how often the background cleanup job runs.
+	// Deprecated: retained for config compatibility; cleanup is not scheduled from this field.
 	CleanupIntervalMinutes int `yaml:"cleanup-interval-minutes,omitempty" json:"cleanup-interval-minutes,omitempty"`
 
-	// MaxTotalSizeMB caps the total size of stored request/response bodies.
-	// When the cap is exceeded, the oldest stored bodies are pruned before the
-	// normal retention window elapses. 0 disables the size cap.
+	// Deprecated: retained for config compatibility; stored content size is reported but not capped here.
 	MaxTotalSizeMB int `yaml:"max-total-size-mb,omitempty" json:"max-total-size-mb,omitempty"`
 
-	// VacuumOnCleanup triggers a database VACUUM after content pruning so disk space is reclaimed.
+	// Deprecated: retained for config compatibility; no cleanup VACUUM is scheduled from this field.
 	VacuumOnCleanup bool `yaml:"vacuum-on-cleanup" json:"vacuum-on-cleanup"`
 }
 

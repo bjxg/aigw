@@ -1353,32 +1353,6 @@ func buildCodexConfigModels(entry *config.CodexKey) []*ModelInfo {
 	return buildConfigModels(entry.Models, "openai", "openai")
 }
 
-func rewriteModelInfoName(name, oldID, newID string) string {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return name
-	}
-	oldID = strings.TrimSpace(oldID)
-	newID = strings.TrimSpace(newID)
-	if oldID == "" || newID == "" {
-		return name
-	}
-	if strings.EqualFold(oldID, newID) {
-		return name
-	}
-	if strings.EqualFold(trimmed, oldID) {
-		return newID
-	}
-	if strings.HasSuffix(trimmed, "/"+oldID) {
-		prefix := strings.TrimSuffix(trimmed, oldID)
-		return prefix + newID
-	}
-	if trimmed == "models/"+oldID {
-		return "models/" + newID
-	}
-	return name
-}
-
 func applyOAuthModelAlias(cfg *config.Config, provider, authKind string, models []*ModelInfo) []*ModelInfo {
 	// OAuth has been removed; model alias mapping no longer applies.
 	return models

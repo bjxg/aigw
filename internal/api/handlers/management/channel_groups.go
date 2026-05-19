@@ -356,25 +356,3 @@ func validateRoutingAndAPIKeyRestrictions(cfg *config.Config, auths []*coreauth.
 
 	return nil
 }
-
-func channelGroupMatchesAnyDescriptor(group config.RoutingChannelGroup, descriptors []channelDescriptor) bool {
-	name := internalrouting.NormalizeGroupName(group.Name)
-	for _, descriptor := range descriptors {
-		prefix := internalrouting.NormalizeGroupName(descriptor.Prefix)
-		channel := strings.TrimSpace(descriptor.Name)
-		if name != "" && prefix != "" && name == prefix {
-			return true
-		}
-		for _, candidatePrefix := range group.Match.Prefixes {
-			if prefix != "" && prefix == internalrouting.NormalizeGroupName(candidatePrefix) {
-				return true
-			}
-		}
-		for _, candidateChannel := range group.Match.Channels {
-			if channel != "" && strings.EqualFold(strings.TrimSpace(candidateChannel), channel) {
-				return true
-			}
-		}
-	}
-	return false
-}

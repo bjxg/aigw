@@ -246,10 +246,6 @@ func fetchOpenRouterModels(ctx context.Context) ([]OpenRouterRemoteModel, error)
 	return payload.Data, nil
 }
 
-func ensureOpenRouterModelSyncStateRow() {
-	GormEnsureOpenRouterModelSyncStateRow()
-}
-
 func recordOpenRouterModelSyncResult(result OpenRouterModelSyncResult, syncErr error) OpenRouterModelSyncState {
 	return GormRecordOpenRouterModelSyncResult(result, syncErr)
 }

@@ -78,10 +78,6 @@ func boolToInt(value bool) int {
 	return 0
 }
 
-func intToBool(value int) bool {
-	return value != 0
-}
-
 func nowRFC3339() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }

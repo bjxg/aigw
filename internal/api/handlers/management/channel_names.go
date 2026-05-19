@@ -9,26 +9,6 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 )
 
-func normalizeChannelName(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
-}
-
-func authChannelLabelFromMetadata(metadata map[string]any, provider string) string {
-	if metadata != nil {
-		if raw, ok := metadata["label"].(string); ok {
-			if label := strings.TrimSpace(raw); label != "" {
-				return label
-			}
-		}
-		if raw, ok := metadata["email"].(string); ok {
-			if email := strings.TrimSpace(raw); email != "" {
-				return email
-			}
-		}
-	}
-	return strings.TrimSpace(provider)
-}
-
 type knownChannel struct {
 	Canonical string
 	Source    string
@@ -81,10 +61,6 @@ func uniqueChannelGroups(values []string) []string {
 	return out
 }
 
-func addKnownChannel(known map[string]knownChannel, rawName, canonicalName, source string) error {
-	return addKnownChannelWithPolicy(known, rawName, canonicalName, source, true)
-}
-
 func addKnownChannelWithPolicy(known map[string]knownChannel, rawName, canonicalName, source string, failOnConflict bool) error {
 	name := strings.TrimSpace(rawName)
 	canonicalName = strings.TrimSpace(canonicalName)
@@ -104,11 +80,6 @@ func addKnownChannelWithPolicy(known map[string]knownChannel, rawName, canonical
 
 func collectKnownChannels(cfg *config.Config, auths []*coreauth.Auth, excludeAuthID string) (map[string]knownChannel, error) {
 	return collectKnownChannelsWithPolicy(cfg, auths, excludeAuthID, true)
-}
-
-func collectKnownChannelsForAuthRename(cfg *config.Config, auths []*coreauth.Auth, excludeAuthID string) map[string]knownChannel {
-	known, _ := collectKnownChannelsWithPolicy(cfg, auths, excludeAuthID, false)
-	return known
 }
 
 func collectKnownChannelsWithPolicy(cfg *config.Config, auths []*coreauth.Auth, excludeAuthID string, failOnConflict bool) (map[string]knownChannel, error) {
@@ -298,21 +269,4 @@ func (h *Handler) validateAllowedChannelGroups(values []string) ([]string, error
 		}
 	}
 	return normalized, nil
-}
-
-func (h *Handler) validateAuthChannelName(name, excludeAuthID string) (string, error) {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return "", fmt.Errorf("channel name is required")
-	}
-	var auths []*coreauth.Auth
-	if h != nil && h.authManager != nil {
-		auths = h.authManager.List()
-	}
-	known := collectKnownChannelsForAuthRename(h.cfg, auths, excludeAuthID)
-	key := strings.ToLower(trimmed)
-	if existing, exists := known[key]; exists {
-		return "", fmt.Errorf("channel name %q is already used by %s", trimmed, existing.Source)
-	}
-	return trimmed, nil
 }

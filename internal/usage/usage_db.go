@@ -3,7 +3,6 @@ package usage
 import (
 	"database/sql"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -90,8 +89,6 @@ type HourlyCountPoint struct {
 	Hour     string `json:"hour"`
 	Requests int64  `json:"requests"`
 }
-
-const systemRequestLogFilterValue = "__system__"
 
 var (
 	usageDBMu   sync.Mutex
@@ -270,10 +267,6 @@ func localDayKeyAt(t time.Time) string {
 // LocalDayKeyAt returns the YYYY-MM-DD day key in the project-configured timezone.
 func LocalDayKeyAt(t time.Time) string {
 	return localDayKeyAt(t)
-}
-
-func cutoffDayKey(days int) string {
-	return localDayKeyAt(CutoffStartUTC(days))
 }
 
 // --- Dashboard bucket helpers (shared between raw and GORM paths) ---
@@ -581,92 +574,6 @@ func QueryTotalCostByKey(apiKeyID int64) (float64, error) {
 	return GormQueryTotalCostByKey(apiKeyID)
 }
 
-// buildWhereClause constructs a WHERE clause from query params for GORM usage.
-func buildWhereClause(params LogQueryParams) (string, []interface{}) {
-	conditions := make([]string, 0, 4)
-	args := make([]interface{}, 0, 4)
-
-	// Time range: days=1 means "today", days=7 means "last 7 days", etc.
-	conditions = append(conditions, "timestamp >= ?")
-	args = append(args, CutoffStartUTC(params.Days).Format(time.RFC3339))
-
-	if params.APIKeyID != 0 {
-		if params.APIKeyID == -1 {
-			conditions = append(conditions, "api_key_id = 0")
-		} else {
-			conditions = append(conditions, "api_key_id = ?")
-			args = append(args, params.APIKeyID)
-		}
-	}
-	if params.UserID != 0 {
-		conditions = append(conditions, "user_id = ?")
-		args = append(args, params.UserID)
-	}
-	if params.Model != "" {
-		conditions = append(conditions, "model = ?")
-		args = append(args, params.Model)
-	}
-	if params.Status == "success" {
-		conditions = append(conditions, "failed = 0")
-	} else if params.Status == "failed" {
-		conditions = append(conditions, "failed = 1")
-	}
-	if len(params.AuthIndexes) > 0 || len(params.ChannelNames) > 0 {
-		filterConditions := make([]string, 0, 2)
-
-		authPlaceholders := make([]string, 0, len(params.AuthIndexes))
-		for _, idx := range params.AuthIndexes {
-			trimmed := strings.TrimSpace(idx)
-			if trimmed == "" {
-				continue
-			}
-			authPlaceholders = append(authPlaceholders, "?")
-			args = append(args, trimmed)
-		}
-		if len(authPlaceholders) > 0 {
-			filterConditions = append(filterConditions, "(auth_index IN ("+strings.Join(authPlaceholders, ",")+") AND trim(coalesce(channel_name, '')) = '')")
-		}
-
-		channelPlaceholders := make([]string, 0, len(params.ChannelNames))
-		for _, name := range params.ChannelNames {
-			trimmed := strings.ToLower(strings.TrimSpace(name))
-			if trimmed == "" {
-				continue
-			}
-			channelPlaceholders = append(channelPlaceholders, "?")
-			args = append(args, trimmed)
-		}
-		if len(channelPlaceholders) > 0 {
-			filterConditions = append(filterConditions, "lower(trim(channel_name)) IN ("+strings.Join(channelPlaceholders, ",")+")")
-		}
-
-		if len(filterConditions) > 0 {
-			conditions = append(conditions, "("+strings.Join(filterConditions, " OR ")+")")
-		} else {
-			conditions = append(conditions, "1 = 0")
-		}
-	}
-
-	if len(conditions) == 0 {
-		return "", nil
-	}
-	return " WHERE " + strings.Join(conditions, " AND "), args
-}
-
-// parseStoredTime parses a stored timestamp string into a time.Time.
-func parseStoredTime(value string) (time.Time, bool) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return time.Time{}, false
-	}
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed.UTC(), true
-		}
-	}
-	return time.Time{}, false
-}
-
 // CalculateCost computes the cost for a given model's token usage.
 // This is a convenience wrapper that delegates to the pricing cache.
 func CalculateCost(model string, inputTokens, outputTokens, cachedTokens int64) float64 {
@@ -704,11 +611,4 @@ func calculateCostFromCache(model string, inputTokens, outputTokens, cachedToken
 	}
 	return pricing.InputPricePerMillion*float64(inputTokens)/1_000_000 +
 		pricing.OutputPricePerMillion*float64(outputTokens)/1_000_000
-}
-
-// sortDailyCountPoints sorts daily count points by date.
-func sortDailyCountPoints(points []DailyCountPoint) {
-	sort.Slice(points, func(i, j int) bool {
-		return points[i].Date < points[j].Date
-	})
 }

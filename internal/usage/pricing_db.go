@@ -75,16 +75,3 @@ func DeleteModelPricing(modelID string) error {
 	pricingCacheMu.Unlock()
 	return nil
 }
-
-func calculateTokenCost(inputTokens, outputTokens, cachedTokens int64, inputPrice, outputPrice, cachedPrice float64) float64 {
-	billableInputTokens := inputTokens
-	if cachedTokens > 0 && inputTokens >= cachedTokens {
-		billableInputTokens = inputTokens - cachedTokens
-	}
-	if cachedPrice <= 0 {
-		cachedPrice = inputPrice
-	}
-	return float64(billableInputTokens)/1_000_000*inputPrice +
-		float64(outputTokens)/1_000_000*outputPrice +
-		float64(cachedTokens)/1_000_000*cachedPrice
-}

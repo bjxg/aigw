@@ -168,9 +168,6 @@ type Manager struct {
 	requestRetry     atomic.Int32
 	maxRetryInterval atomic.Int64
 
-	// oauthModelAlias stores global OAuth model alias mappings (alias -> upstream name) keyed by channel.
-	oauthModelAlias atomic.Value
-
 	// apiKeyModelAlias caches resolved model alias mappings for API-key auths.
 	// Keyed by auth.ID, value is alias(lower) -> upstream model (including suffix).
 	apiKeyModelAlias atomic.Value
@@ -1985,92 +1982,6 @@ func (m *Manager) CloseExecutionSession(sessionID string) {
 	}
 }
 
-func (m *Manager) pickNext(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, tried map[string]struct{}) (*Auth, ProviderExecutor, error) {
-	pinnedAuthID := pinnedAuthIDFromMetadata(opts.Metadata)
-	allowedChannels := allowedChannelsFromMetadata(opts.Metadata)
-	allowedGroups := allowedChannelGroupsFromMetadata(opts.Metadata)
-	routeGroup := routeGroupFromMetadata(opts.Metadata)
-	routeFallback := routeFallbackFromMetadata(opts.Metadata)
-	cfg, _ := m.runtimeConfig.Load().(*internalconfig.Config)
-
-	m.mu.RLock()
-	executor, okExecutor := m.executors[provider]
-	if !okExecutor {
-		m.mu.RUnlock()
-		return nil, nil, &Error{Code: "executor_not_found", Message: "executor not registered"}
-	}
-	modelKey := strings.TrimSpace(model)
-	// Always use base model name (without thinking suffix) for auth matching.
-	if modelKey != "" {
-		parsed := thinking.ParseSuffix(modelKey)
-		if parsed.ModelName != "" {
-			modelKey = strings.TrimSpace(parsed.ModelName)
-		}
-	}
-	registryRef := registry.GetGlobalRegistry()
-	buildCandidates := func(enforceRouteGroup bool) []*Auth {
-		candidates := make([]*Auth, 0, len(m.auths))
-		for _, candidate := range m.auths {
-			if candidate.Provider != provider || candidate.Disabled {
-				continue
-			}
-			if pinnedAuthID != "" && candidate.ID != pinnedAuthID {
-				continue
-			}
-			if !authAllowedByChannels(candidate, allowedChannels) {
-				continue
-			}
-			if !authAllowedByGroups(cfg, candidate, allowedGroups) {
-				continue
-			}
-			if enforceRouteGroup && !authInRouteGroup(cfg, candidate, routeGroup) {
-				continue
-			}
-			if _, used := tried[candidate.ID]; used {
-				continue
-			}
-			if modelKey != "" && !candidateSupportsModel(cfg, registryRef, candidate, modelKey, routeGroup, allowedGroups) {
-				continue
-			}
-			scopedRouteGroup := ""
-			if enforceRouteGroup {
-				scopedRouteGroup = routeGroup
-			}
-			candidates = append(candidates, prepareCandidateForSelection(cfg, candidate, scopedRouteGroup, allowedGroups))
-		}
-		return candidates
-	}
-	candidates := buildCandidates(routeGroup != "")
-	if len(candidates) == 0 && routeGroup != "" && routeFallback == "default" {
-		candidates = buildCandidates(false)
-	}
-	if len(candidates) == 0 {
-		m.mu.RUnlock()
-		return nil, nil, &Error{Code: "auth_not_found", Message: "no auth available"}
-	}
-	selector := m.selectorForRoutingScopeLocked(cfg, routeGroup, allowedGroups)
-	selected, errPick := selector.Pick(ctx, provider, model, opts, candidates)
-	if errPick != nil {
-		m.mu.RUnlock()
-		return nil, nil, errPick
-	}
-	if selected == nil {
-		m.mu.RUnlock()
-		return nil, nil, &Error{Code: "auth_not_found", Message: "selector returned no auth"}
-	}
-	authCopy := selected.Clone()
-	m.mu.RUnlock()
-	if !selected.indexAssigned {
-		m.mu.Lock()
-		if current := m.auths[authCopy.ID]; current != nil && !current.indexAssigned {
-			current.EnsureIndex()
-			authCopy = current.Clone()
-		}
-		m.mu.Unlock()
-	}
-	return authCopy, executor, nil
-}
-
 func (m *Manager) pickNextMixed(ctx context.Context, providers []string, model string, opts cliproxyexecutor.Options, tried map[string]struct{}) (*Auth, ProviderExecutor, string, error) {
 	pinnedAuthID := pinnedAuthIDFromMetadata(opts.Metadata)
 	allowedChannels := allowedChannelsFromMetadata(opts.Metadata)
@@ -2784,24 +2695,6 @@ func (m *Manager) HttpRequest(ctx context.Context, auth *Auth, req *http.Request
 type modelAliasEntry interface {
 	GetName() string
 	GetAlias() string
-}
-
-func resolveBuiltInCodexModelAlias(auth *Auth, requestedModel string) string {
-	if auth == nil || !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
-		return ""
-	}
-	requestedModel = strings.TrimSpace(requestedModel)
-	if requestedModel == "" {
-		return ""
-	}
-	parsed := thinking.ParseSuffix(requestedModel)
-	if !strings.EqualFold(strings.TrimSpace(parsed.ModelName), "codex-auto-review") {
-		return ""
-	}
-	if parsed.HasSuffix && parsed.RawSuffix != "" {
-		return "gpt-5.5" + "(" + parsed.RawSuffix + ")"
-	}
-	return "gpt-5.5"
 }
 
 func resolveModelAliasFromConfigModels(requestedModel string, models []modelAliasEntry) string {

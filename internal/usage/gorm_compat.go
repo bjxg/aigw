@@ -27,7 +27,7 @@ func InitDB(driver, dsn string, storageCfg config.RequestLogStorageConfig, loc *
 	}
 	usageLoc = loc
 	usageDBPath = dsn
-	requestLogStorage = normalizeRequestLogStorageConfig(storageCfg)
+	_ = storageCfg
 
 	log.Debugf("usage: opening database driver=%s url=%s", driver, dsn)
 

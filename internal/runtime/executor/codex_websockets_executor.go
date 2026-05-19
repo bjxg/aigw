@@ -1055,36 +1055,6 @@ func closeHTTPResponseBody(resp *http.Response, logPrefix string) {
 	}
 }
 
-func closeOnContextDone(ctx context.Context, conn *websocket.Conn) chan struct{} {
-	done := make(chan struct{})
-	if ctx == nil || conn == nil {
-		return done
-	}
-	go func() {
-		select {
-		case <-done:
-		case <-ctx.Done():
-			_ = conn.Close()
-		}
-	}()
-	return done
-}
-
-func cancelReadOnContextDone(ctx context.Context, conn *websocket.Conn) chan struct{} {
-	done := make(chan struct{})
-	if ctx == nil || conn == nil {
-		return done
-	}
-	go func() {
-		select {
-		case <-done:
-		case <-ctx.Done():
-			_ = conn.SetReadDeadline(time.Now())
-		}
-	}()
-	return done
-}
-
 func executionSessionIDFromOptions(opts cliproxyexecutor.Options) string {
 	if len(opts.Metadata) == 0 {
 		return ""

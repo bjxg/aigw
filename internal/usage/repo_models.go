@@ -32,10 +32,6 @@ func gormToModelOwnerPresetRow(m ModelOwnerPreset) ModelOwnerPresetRow {
 
 // --- GORM ModelPricing helpers ---
 
-func modelPricingRowToGORM(row ModelPricingRow) ModelPricing {
-	return ModelPricing(row)
-}
-
 func gormToModelPricingRow(m ModelPricing) ModelPricingRow {
 	return ModelPricingRow(m)
 }
