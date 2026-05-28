@@ -303,6 +303,12 @@ type RemoteManagement struct {
 	// PanelGitHubRepository overrides the GitHub repository used to fetch the management panel asset.
 	// Accepts either a repository URL (https://github.com/org/repo) or an API releases endpoint.
 	PanelGitHubRepository string `yaml:"panel-github-repository"`
+	// TrustedProxies is a list of trusted proxy IP addresses or CIDR ranges.
+	// When the server is behind a reverse proxy (e.g., Nginx), add the proxy's IP or network here
+	// so that Gin can correctly parse X-Forwarded-For / X-Real-IP headers to obtain the real client IP.
+	// If left empty, Gin will ignore all proxy headers and use the direct connection IP.
+	// Examples: ["127.0.0.1", "172.18.0.0/16", "10.0.0.0/8"]
+	TrustedProxies []string `yaml:"trusted-proxies"`
 }
 
 // QuotaExceeded defines the behavior when API quota limits are exceeded.

@@ -221,8 +221,14 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 
 	// Create gin engine
 	engine := gin.New()
-	if err := engine.SetTrustedProxies(nil); err != nil {
-		log.Warnf("failed to disable trusted proxies: %v", err)
+	if len(cfg.RemoteManagement.TrustedProxies) > 0 {
+		if err := engine.SetTrustedProxies(cfg.RemoteManagement.TrustedProxies); err != nil {
+			log.Warnf("failed to set trusted proxies %v: %v", cfg.RemoteManagement.TrustedProxies, err)
+		}
+	} else {
+		if err := engine.SetTrustedProxies(nil); err != nil {
+			log.Warnf("failed to disable trusted proxies: %v", err)
+		}
 	}
 	if optionState.engineConfigurator != nil {
 		optionState.engineConfigurator(engine)
