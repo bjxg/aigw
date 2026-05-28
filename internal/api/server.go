@@ -230,6 +230,12 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 			log.Warnf("failed to disable trusted proxies: %v", err)
 		}
 	}
+
+	// Prefer X-Real-IP over X-Forwarded-For. In our deployment, the immediate upstream
+	// Nginx sets X-Real-IP to the real client IP (via $remote_addr or real_ip module),
+	// so we only need to trust the direct proxy instead of the entire proxy chain.
+	engine.RemoteIPHeaders = []string{"X-Real-IP", "X-Forwarded-For"}
+
 	if optionState.engineConfigurator != nil {
 		optionState.engineConfigurator(engine)
 	}
