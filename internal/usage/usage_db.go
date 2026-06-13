@@ -15,6 +15,7 @@ type LogRow struct {
 	APIKeyID        int64     `json:"api_key_id"`
 	APIKeyName      string    `json:"api_key_name"`
 	UserID          *int64    `json:"user_id,omitempty"`
+	UserName        string    `json:"user_name,omitempty"`
 	Model           string    `json:"model"`
 	Source          string    `json:"source"`
 	ChannelName     string    `json:"channel_name"`

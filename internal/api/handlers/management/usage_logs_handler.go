@@ -115,6 +115,31 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 		}
 	}
 
+	// Enrich log items with user names (batch lookup from user table)
+	userIDs := make(map[int64]struct{})
+	for _, item := range result.Items {
+		if item.UserID != nil && *item.UserID > 0 {
+			userIDs[*item.UserID] = struct{}{}
+		}
+	}
+	if len(userIDs) > 0 {
+		ids := make([]int64, 0, len(userIDs))
+		for id := range userIDs {
+			ids = append(ids, id)
+		}
+		userNameMap, err := usage.GormGetUserNamesByIDs(ids)
+		if err == nil {
+			for i := range result.Items {
+				item := &result.Items[i]
+				if item.UserID != nil && *item.UserID > 0 {
+					if name, ok := userNameMap[*item.UserID]; ok && strings.TrimSpace(name) != "" {
+						item.UserName = name
+					}
+				}
+			}
+		}
+	}
+
 	// Enrich filter API key items with names from config
 	if len(filters.APIKeys) > 0 {
 		for i := range filters.APIKeys {

@@ -72,6 +72,32 @@ func GormGetUserByID(id int64) (*User, error) {
 	return &user, nil
 }
 
+// GormGetUserNamesByIDs returns a map of user ID → name for the given IDs.
+// IDs with no matching user are silently omitted.
+func GormGetUserNamesByIDs(ids []int64) (map[int64]string, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil, fmt.Errorf("database not initialised")
+	}
+	if len(ids) == 0 {
+		return make(map[int64]string), nil
+	}
+
+	type idName struct {
+		ID   int64
+		Name string
+	}
+	var pairs []idName
+	if err := gormDB.Model(&User{}).Where("id IN ?", ids).Select("id, name").Scan(&pairs).Error; err != nil {
+		return nil, fmt.Errorf("usage: GORM get user names by ids: %w", err)
+	}
+	result := make(map[int64]string, len(pairs))
+	for _, p := range pairs {
+		result[p.ID] = p.Name
+	}
+	return result, nil
+}
+
 // GormCreateUser inserts a new user record.
 func GormCreateUser(user *User) error {
 	gormDB := getGormDB()
