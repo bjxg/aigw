@@ -405,8 +405,6 @@ func (s *Service) ensureExecutorsForAuthWithMode(a *coreauth.Auth, forceReplace 
 	switch strings.ToLower(a.Provider) {
 	case "gemini":
 		s.coreManager.RegisterExecutor(executor.NewGeminiExecutor(s.cfg))
-	case "vertex":
-		s.coreManager.RegisterExecutor(executor.NewGeminiVertexExecutor(s.cfg))
 	case "aistudio":
 		if s.wsGateway != nil {
 			s.coreManager.RegisterExecutor(executor.NewAIStudioExecutor(s.cfg, a.ID, s.wsGateway))
@@ -414,10 +412,6 @@ func (s *Service) ensureExecutorsForAuthWithMode(a *coreauth.Auth, forceReplace 
 		return
 	case "claude":
 		s.coreManager.RegisterExecutor(executor.NewClaudeExecutor(s.cfg))
-	case "bedrock":
-		s.coreManager.RegisterExecutor(executor.NewBedrockExecutor(s.cfg))
-	case "opencode-go":
-		s.coreManager.RegisterExecutor(executor.NewOpenCodeGoExecutor(s.cfg))
 	default:
 		providerKey := strings.ToLower(strings.TrimSpace(a.Provider))
 		if providerKey == "" {
@@ -797,15 +791,6 @@ func (s *Service) registerModelsForAuth(ctx context.Context, a *coreauth.Auth) {
 			}
 		}
 		models = applyExcludedModels(models, excluded)
-	case "vertex":
-		// Vertex AI Gemini supports the same model identifiers as Gemini.
-		models = registry.GetGeminiVertexModels()
-		if authKind == "apikey" {
-			if entry := s.resolveConfigVertexCompatKey(a); entry != nil && len(entry.Models) > 0 {
-				models = buildVertexCompatConfigModels(entry)
-			}
-		}
-		models = applyExcludedModels(models, excluded)
 	case "gemini-cli":
 		models = registry.GetGeminiCLIModels()
 		models = applyExcludedModels(models, excluded)
@@ -823,22 +808,6 @@ func (s *Service) registerModelsForAuth(ctx context.Context, a *coreauth.Auth) {
 			}
 		}
 		models = applyExcludedModels(models, excluded)
-	case "bedrock":
-		models = registry.GetBedrockModels()
-		if entry := s.resolveConfigBedrockKey(a); entry != nil {
-			if len(entry.Models) > 0 {
-				models = buildBedrockConfigModels(entry)
-			}
-			if authKind == "apikey" {
-				excluded = entry.ExcludedModels
-			}
-		}
-		models = applyExcludedModels(models, excluded)
-	case "opencode-go":
-		models = registry.GetOpenCodeGoModels()
-		if entry := s.resolveConfigOpenCodeGoKey(a); entry != nil && authKind == "apikey" {
-			excluded = entry.ExcludedModels
-		}
 		models = applyExcludedModels(models, excluded)
 	case "codex":
 		models = registry.GetOpenAIModels()
@@ -1004,112 +973,6 @@ func (s *Service) resolveConfigGeminiKey(auth *coreauth.Auth) *config.GeminiKey 
 		}
 		if attrKey == "" && attrBase != "" && strings.EqualFold(cfgBase, attrBase) {
 			return entry
-		}
-	}
-	return nil
-}
-
-func (s *Service) resolveConfigBedrockKey(auth *coreauth.Auth) *config.BedrockKey {
-	if auth == nil || s.cfg == nil {
-		return nil
-	}
-	var attrKey, attrAccessKeyID, attrBase, attrRegion, attrMode string
-	if auth.Attributes != nil {
-		attrKey = strings.TrimSpace(auth.Attributes["api_key"])
-		attrAccessKeyID = strings.TrimSpace(auth.Attributes["access_key_id"])
-		attrBase = strings.TrimSpace(auth.Attributes["base_url"])
-		attrRegion = strings.TrimSpace(auth.Attributes["region"])
-		attrMode = strings.ToLower(strings.TrimSpace(auth.Attributes["auth_mode"]))
-	}
-	if attrMode == "apikey" || attrMode == "api_key" {
-		attrMode = "api-key"
-	}
-	for i := range s.cfg.BedrockKey {
-		entry := &s.cfg.BedrockKey[i]
-		cfgMode := strings.ToLower(strings.TrimSpace(entry.AuthMode))
-		if cfgMode == "" {
-			cfgMode = "sigv4"
-		}
-		if cfgMode == "apikey" || cfgMode == "api_key" {
-			cfgMode = "api-key"
-		}
-		if attrMode != "" && cfgMode != attrMode {
-			continue
-		}
-		cfgBase := strings.TrimSpace(entry.BaseURL)
-		if attrBase != "" && !strings.EqualFold(cfgBase, attrBase) {
-			continue
-		}
-		cfgRegion := strings.TrimSpace(entry.Region)
-		if cfgRegion == "" {
-			cfgRegion = config.DefaultBedrockRegion
-		}
-		if attrRegion != "" && !strings.EqualFold(cfgRegion, attrRegion) {
-			continue
-		}
-		if cfgMode == "api-key" {
-			if attrKey != "" && strings.EqualFold(strings.TrimSpace(entry.APIKey), attrKey) {
-				return entry
-			}
-			continue
-		}
-		cfgAccessKeyID := strings.TrimSpace(entry.AccessKeyID)
-		if attrAccessKeyID != "" && strings.EqualFold(cfgAccessKeyID, attrAccessKeyID) {
-			return entry
-		}
-		if attrKey != "" && strings.EqualFold(cfgAccessKeyID, attrKey) {
-			return entry
-		}
-	}
-	return nil
-}
-
-func (s *Service) resolveConfigOpenCodeGoKey(auth *coreauth.Auth) *config.OpenCodeGoKey {
-	if auth == nil || s.cfg == nil {
-		return nil
-	}
-	var attrKey string
-	if auth.Attributes != nil {
-		attrKey = strings.TrimSpace(auth.Attributes["api_key"])
-	}
-	for i := range s.cfg.OpenCodeGoKey {
-		entry := &s.cfg.OpenCodeGoKey[i]
-		if attrKey != "" && strings.EqualFold(strings.TrimSpace(entry.APIKey), attrKey) {
-			return entry
-		}
-	}
-	return nil
-}
-
-func (s *Service) resolveConfigVertexCompatKey(auth *coreauth.Auth) *config.VertexCompatKey {
-	if auth == nil || s.cfg == nil {
-		return nil
-	}
-	var attrKey, attrBase string
-	if auth.Attributes != nil {
-		attrKey = strings.TrimSpace(auth.Attributes["api_key"])
-		attrBase = strings.TrimSpace(auth.Attributes["base_url"])
-	}
-	for i := range s.cfg.VertexCompatAPIKey {
-		entry := &s.cfg.VertexCompatAPIKey[i]
-		cfgKey := strings.TrimSpace(entry.APIKey)
-		cfgBase := strings.TrimSpace(entry.BaseURL)
-		if attrKey != "" && strings.EqualFold(cfgKey, attrKey) {
-			if cfgBase == "" || strings.EqualFold(cfgBase, attrBase) {
-				return entry
-			}
-			continue
-		}
-		if attrKey == "" && attrBase != "" && strings.EqualFold(cfgBase, attrBase) {
-			return entry
-		}
-	}
-	if attrKey != "" {
-		for i := range s.cfg.VertexCompatAPIKey {
-			entry := &s.cfg.VertexCompatAPIKey[i]
-			if strings.EqualFold(strings.TrimSpace(entry.APIKey), attrKey) {
-				return entry
-			}
 		}
 	}
 	return nil
@@ -1318,13 +1181,6 @@ func buildConfigModels[T modelEntry](models []T, ownedBy, modelType string) []*M
 	return out
 }
 
-func buildVertexCompatConfigModels(entry *config.VertexCompatKey) []*ModelInfo {
-	if entry == nil {
-		return nil
-	}
-	return buildConfigModels(entry.Models, "google", "vertex")
-}
-
 func buildGeminiConfigModels(entry *config.GeminiKey) []*ModelInfo {
 	if entry == nil {
 		return nil
@@ -1337,13 +1193,6 @@ func buildClaudeConfigModels(entry *config.ClaudeKey) []*ModelInfo {
 		return nil
 	}
 	return buildConfigModels(entry.Models, "anthropic", "claude")
-}
-
-func buildBedrockConfigModels(entry *config.BedrockKey) []*ModelInfo {
-	if entry == nil {
-		return nil
-	}
-	return buildConfigModels(entry.Models, "aws", "bedrock")
 }
 
 func buildCodexConfigModels(entry *config.CodexKey) []*ModelInfo {

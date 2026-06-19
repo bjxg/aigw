@@ -46,7 +46,6 @@ var defaultOwnerLabels = map[string]string{
 	"openai":       "OpenAI",
 	"google":       "Google",
 	"gemini":       "Gemini",
-	"vertex":       "Vertex AI",
 	"deepseek":     "DeepSeek",
 	"qwen":         "Qwen",
 	"kimi":         "Kimi",
@@ -86,7 +85,6 @@ func defaultModelConfigRows() []ModelConfigRow {
 	channels := []string{
 		"claude",
 		"gemini",
-		"vertex",
 		"gemini-cli",
 		"aistudio",
 		"codex",

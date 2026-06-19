@@ -113,9 +113,9 @@ type userAPIKeyPathItem struct {
 }
 
 type userAPIKeyGroupItem struct {
-	Name   string              `json:"name"`
+	Name   string               `json:"name"`
 	Paths  []userAPIKeyPathItem `json:"paths"`
-	Models []string            `json:"models"`
+	Models []string             `json:"models"`
 }
 
 type userAPIKeyItem struct {

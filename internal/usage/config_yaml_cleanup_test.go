@@ -93,15 +93,15 @@ func TestCleanDBBackedConfigFromYAMLCleansPersistedSections(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	if removed := CleanDBBackedConfigFromYAML(configPath); removed != 18 {
-		t.Fatalf("CleanDBBackedConfigFromYAML removed %d sections, want 18", removed)
+	if removed := CleanDBBackedConfigFromYAML(configPath); removed != 15 {
+		t.Fatalf("CleanDBBackedConfigFromYAML removed %d sections, want 15", removed)
 	}
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	for _, forbidden := range []string{"api-keys:", "api-key-entries:", "api-key-permission-profiles:", "routing:", "proxy-pool:", "gemini-api-key:", "codex-api-key:", "claude-api-key:", "bedrock-api-key:", "opencode-go-api-key:", "openai-compatibility:", "vertex-api-key:", "claude-header-defaults:", "kimi-header-defaults:", "identity-fingerprint:", "oauth-excluded-models:", "oauth-model-alias:", "payload:"} {
+	for _, forbidden := range []string{"api-keys:", "api-key-entries:", "api-key-permission-profiles:", "routing:", "proxy-pool:", "gemini-api-key:", "codex-api-key:", "claude-api-key:", "openai-compatibility:", "claude-header-defaults:", "kimi-header-defaults:", "identity-fingerprint:", "oauth-excluded-models:", "oauth-model-alias:", "payload:"} {
 		if strings.Contains(string(data), forbidden) {
 			t.Fatalf("%s should be removed from YAML:\n%s", forbidden, string(data))
 		}

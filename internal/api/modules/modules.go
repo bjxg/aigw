@@ -66,17 +66,16 @@ type RouteModuleV2 interface {
 // interface. This allows gradual migration from V1 to V2 without breaking
 // existing modules.
 //
-// Example usage:
-//
-//	ctx := modules.Context{
-//	    Engine:         engine,
-//	    BaseHandler:    baseHandler,
-//	    Config:         cfg,
-//	    AuthMiddleware: authMiddleware,
-//	}
-//	if err := modules.RegisterModule(ctx, ampModule); err != nil {
-//	    log.Errorf("Failed to register module: %v", err)
-//	}
+//	// Example usage:
+//	//	ctx := modules.Context{
+//	//	    Engine:         engine,
+//	//	    BaseHandler:    baseHandler,
+//	//	    Config:         cfg,
+//	//	    AuthMiddleware: authMiddleware,
+//	//	}
+//	//	if err := modules.RegisterModule(ctx, myModule); err != nil {
+//	//	    log.Errorf("Failed to register module: %v", err)
+//	//	}
 func RegisterModule(ctx Context, mod interface{}) error {
 	// Try V2 interface first (preferred)
 	if v2, ok := mod.(RouteModuleV2); ok {

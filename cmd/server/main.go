@@ -27,7 +27,6 @@ var (
 )
 
 type cliModeOptions struct {
-	vertexImport     string
 	password         string
 	isCloudDeploy    bool
 	configFileExists bool
@@ -45,13 +44,11 @@ func main() {
 	fmt.Printf("aigw-server Version: %s, Commit: %s, BuiltAt: %s\n", buildinfo.Version, buildinfo.Commit, buildinfo.BuildDate)
 
 	// Command-line flags to control the application's behavior.
-	var vertexImport string
 	var configPath string
 	var password string
 
 	// Define command-line flags for different operation modes.
 	flag.StringVar(&configPath, "config", DefaultConfigPath, "Configure File Path")
-	flag.StringVar(&vertexImport, "vertex-import", "", "Import Vertex service account key JSON file")
 	flag.StringVar(&password, "password", "", "")
 
 	flag.CommandLine.Usage = func() {
@@ -170,7 +167,6 @@ func main() {
 	configaccess.Register(&cfg.SDKConfig)
 
 	runSelectedMode(cfg, configFilePath, password, cliModeOptions{
-		vertexImport:     vertexImport,
 		password:         password,
 		isCloudDeploy:    isCloudDeploy,
 		configFileExists: configFileExists,
@@ -178,10 +174,6 @@ func main() {
 }
 
 func runSelectedMode(cfg *config.Config, configFilePath string, password string, mode cliModeOptions) {
-	if mode.vertexImport != "" {
-		cmd.DoVertexImport(cfg, mode.vertexImport)
-		return
-	}
 	runServiceMode(cfg, configFilePath, password, mode)
 }
 

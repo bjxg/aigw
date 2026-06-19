@@ -185,3 +185,13 @@ func TestOpenAICompatKeyUsesModelNameWhenAliasEmpty(t *testing.T) {
 		t.Fatalf("expected model-name fallback, got %s/%s", key, label)
 	}
 }
+
+func expectContains(t *testing.T, list []string, want string) {
+	t.Helper()
+	for _, s := range list {
+		if s == want {
+			return
+		}
+	}
+	t.Errorf("expected list to contain %q, got %v", want, list)
+}

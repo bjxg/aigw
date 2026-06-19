@@ -64,9 +64,6 @@ func collectChannelDescriptors(cfg *config.Config, auths []*coreauth.Auth) []cha
 		for _, entry := range cfg.CodexKey {
 			push(entry.Name, entry.Prefix, "codex", buildAuthTagPayloadFromValues("codex", nil))
 		}
-		for _, entry := range cfg.VertexCompatAPIKey {
-			push("", entry.Prefix, "vertex", buildAuthTagPayloadFromValues("vertex", nil))
-		}
 		for _, entry := range cfg.OpenAICompatibility {
 			push(entry.Name, entry.Prefix, "openai", buildAuthTagPayloadFromValues("openai", nil))
 		}

@@ -583,20 +583,6 @@ func resolveUsageSource(auth *cliproxyauth.Auth, ctxAPIKey string) string {
 				return id
 			}
 		}
-		if strings.EqualFold(provider, "vertex") {
-			if auth.Metadata != nil {
-				if projectID, ok := auth.Metadata["project_id"].(string); ok {
-					if trimmed := strings.TrimSpace(projectID); trimmed != "" {
-						return trimmed
-					}
-				}
-				if project, ok := auth.Metadata["project"].(string); ok {
-					if trimmed := strings.TrimSpace(project); trimmed != "" {
-						return trimmed
-					}
-				}
-			}
-		}
 		if _, value := auth.AccountInfo(); value != "" {
 			return strings.TrimSpace(value)
 		}

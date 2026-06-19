@@ -110,12 +110,6 @@ type Config struct {
 	// ClaudeKey defines a list of Claude API key configurations as specified in the YAML configuration file.
 	ClaudeKey []ClaudeKey `yaml:"claude-api-key" json:"claude-api-key"`
 
-	// BedrockKey defines AWS Bedrock Runtime credential configurations.
-	BedrockKey []BedrockKey `yaml:"bedrock-api-key" json:"bedrock-api-key"`
-
-	// OpenCodeGoKey defines OpenCode Go plan API key configurations.
-	OpenCodeGoKey []OpenCodeGoKey `yaml:"opencode-go-api-key" json:"opencode-go-api-key"`
-
 	// ClaudeHeaderDefaults configures default header values for Claude API requests.
 	// These are used as fallbacks when the client does not send its own headers.
 	ClaudeHeaderDefaults ClaudeHeaderDefaults `yaml:"claude-header-defaults" json:"claude-header-defaults"`
@@ -132,13 +126,6 @@ type Config struct {
 
 	// OpenAICompatibility defines OpenAI API compatibility configurations for external providers.
 	OpenAICompatibility []OpenAICompatibility `yaml:"openai-compatibility" json:"openai-compatibility"`
-
-	// VertexCompatAPIKey defines Vertex AI-compatible API key configurations for third-party providers.
-	// Used for services that use Vertex AI-style paths but with simple API key authentication.
-	VertexCompatAPIKey []VertexCompatKey `yaml:"vertex-api-key" json:"vertex-api-key"`
-
-	// AmpCode contains Amp CLI upstream configuration, management restrictions, and model mappings.
-	AmpCode AmpCode `yaml:"ampcode" json:"ampcode"`
 
 	// Payload defines default and override rules for provider payload parameters.
 	Payload PayloadConfig `yaml:"payload" json:"payload"`
@@ -336,63 +323,6 @@ type RoutingConfig struct {
 
 	// PathRoutes maps URL path namespaces to channel groups.
 	PathRoutes []RoutingPathRoute `yaml:"path-routes,omitempty" json:"path-routes,omitempty"`
-}
-
-// AmpModelMapping defines a model name mapping for Amp CLI requests.
-// When Amp requests a model that isn't available locally, this mapping
-// allows routing to an alternative model that IS available.
-type AmpModelMapping struct {
-	// From is the model name that Amp CLI requests (e.g., "claude-opus-4.5").
-	From string `yaml:"from" json:"from"`
-
-	// To is the target model name to route to (e.g., "claude-sonnet-4").
-	// The target model must have available providers in the registry.
-	To string `yaml:"to" json:"to"`
-
-	// Regex indicates whether the 'from' field should be interpreted as a regular
-	// expression for matching model names. When true, this mapping is evaluated
-	// after exact matches and in the order provided. Defaults to false (exact match).
-	Regex bool `yaml:"regex,omitempty" json:"regex,omitempty"`
-}
-
-// AmpCode groups Amp CLI integration settings including upstream routing,
-// optional overrides, management route restrictions, and model fallback mappings.
-type AmpCode struct {
-	// UpstreamURL defines the upstream Amp control plane used for non-provider calls.
-	UpstreamURL string `yaml:"upstream-url" json:"upstream-url"`
-
-	// UpstreamAPIKey optionally overrides the Authorization header when proxying Amp upstream calls.
-	UpstreamAPIKey string `yaml:"upstream-api-key" json:"upstream-api-key"`
-
-	// UpstreamAPIKeys maps client API keys (from top-level api-keys) to upstream API keys.
-	// When a client authenticates with a key that matches an entry, that upstream key is used.
-	// If no match is found, falls back to UpstreamAPIKey (default behavior).
-	UpstreamAPIKeys []AmpUpstreamAPIKeyEntry `yaml:"upstream-api-keys,omitempty" json:"upstream-api-keys,omitempty"`
-
-	// RestrictManagementToLocalhost restricts Amp management routes (/api/user, /api/threads, etc.)
-	// to only accept connections from localhost (127.0.0.1, ::1). When true, prevents drive-by
-	// browser attacks and remote access to management endpoints. Default: false (API key auth is sufficient).
-	RestrictManagementToLocalhost bool `yaml:"restrict-management-to-localhost" json:"restrict-management-to-localhost"`
-
-	// ModelMappings defines model name mappings for Amp CLI requests.
-	// When Amp requests a model that isn't available locally, these mappings
-	// allow routing to an alternative model that IS available.
-	ModelMappings []AmpModelMapping `yaml:"model-mappings" json:"model-mappings"`
-
-	// ForceModelMappings when true, model mappings take precedence over local API keys.
-	// When false (default), local API keys are used first if available.
-	ForceModelMappings bool `yaml:"force-model-mappings" json:"force-model-mappings"`
-}
-
-// AmpUpstreamAPIKeyEntry maps a set of client API keys to a specific upstream API key.
-// When a request is authenticated with one of the APIKeys, the corresponding UpstreamAPIKey
-// is used for the upstream Amp request.
-type AmpUpstreamAPIKeyEntry struct {
-	// UpstreamAPIKey is the API key to use when proxying to the Amp upstream.
-	UpstreamAPIKey string `yaml:"upstream-api-key" json:"upstream-api-key"`
-
-	// APIKeys are the client API keys (from top-level api-keys) that map to this upstream key.
-	APIKeys []string `yaml:"api-keys" json:"api-keys"`
 }
 
 // PayloadConfig defines default and override parameter rules applied to provider payloads.
@@ -714,35 +644,6 @@ type OpenAICompatibilityModel struct {
 func (m OpenAICompatibilityModel) GetName() string  { return m.Name }
 func (m OpenAICompatibilityModel) GetAlias() string { return m.Alias }
 
-// OpenCodeGoKey represents an OpenCode Go plan API key.
-// The upstream endpoint is fixed to https://opencode.ai/zen/go/v1.
-type OpenCodeGoKey struct {
-	// APIKey is the authentication key for OpenCode Go.
-	APIKey string `yaml:"api-key" json:"api-key"`
-
-	// Name is a human-readable label for this channel.
-	Name string `yaml:"name,omitempty" json:"name,omitempty"`
-
-	// Priority controls selection preference when multiple credentials match.
-	// Higher values are preferred; defaults to 0.
-	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
-
-	// Prefix optionally namespaces models for this credential.
-	Prefix string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
-
-	// ProxyURL overrides the global proxy setting for this API key if provided.
-	ProxyURL string `yaml:"proxy-url,omitempty" json:"proxy-url,omitempty"`
-
-	// ProxyID references a reusable proxy-pool entry. When valid, it takes precedence over ProxyURL.
-	ProxyID string `yaml:"proxy-id,omitempty" json:"proxy-id,omitempty"`
-
-	// Headers optionally adds extra HTTP headers for requests sent with this key.
-	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-
-	// ExcludedModels lists model IDs that should be excluded for this provider.
-	ExcludedModels []string `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
-}
-
 // LoadConfig reads a YAML configuration file from the given path,
 // unmarshals it into a Config struct, applies environment variable overrides,
 // and returns it.
@@ -797,7 +698,6 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.Routing.IncludeDefaultGroup = true
 	cfg.Pprof.Enable = false
 	cfg.Pprof.Addr = DefaultPprofAddr
-	cfg.AmpCode.RestrictManagementToLocalhost = false // Default to false: API key auth is sufficient
 	cfg.RemoteManagement.PanelGitHubRepository = DefaultPanelGitHubRepository
 	cfg.Database.Driver = "sqlite"
 	if err = yaml.Unmarshal(data, &cfg); err != nil {
@@ -853,20 +753,11 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	// Sanitize Gemini API key configuration and migrate legacy entries.
 	cfg.SanitizeGeminiKeys()
 
-	// Sanitize Vertex-compatible API keys: drop entries without base-url
-	cfg.SanitizeVertexCompatKeys()
-
 	// Sanitize Codex keys: drop entries without base-url
 	cfg.SanitizeCodexKeys()
 
 	// Sanitize Claude key headers
 	cfg.SanitizeClaudeKeys()
-
-	// Sanitize AWS Bedrock Runtime credentials.
-	cfg.SanitizeBedrockKeys()
-
-	// Sanitize OpenCode Go plan API keys.
-	cfg.SanitizeOpenCodeGoKeys()
 
 	// Normalize provider identity fingerprints.
 	cfg.SanitizeIdentityFingerprint()
@@ -1041,34 +932,6 @@ func (cfg *Config) SanitizeClaudeKeys() {
 	cfg.ClaudeKey = out
 }
 
-// SanitizeOpenCodeGoKeys deduplicates and normalizes OpenCode Go credentials.
-func (cfg *Config) SanitizeOpenCodeGoKeys() {
-	if cfg == nil || len(cfg.OpenCodeGoKey) == 0 {
-		return
-	}
-	seen := make(map[string]struct{}, len(cfg.OpenCodeGoKey))
-	out := make([]OpenCodeGoKey, 0, len(cfg.OpenCodeGoKey))
-	for i := range cfg.OpenCodeGoKey {
-		entry := cfg.OpenCodeGoKey[i]
-		entry.APIKey = strings.TrimSpace(entry.APIKey)
-		if entry.APIKey == "" {
-			continue
-		}
-		if _, exists := seen[entry.APIKey]; exists {
-			continue
-		}
-		seen[entry.APIKey] = struct{}{}
-		entry.Name = strings.TrimSpace(entry.Name)
-		entry.Prefix = normalizeModelPrefix(entry.Prefix)
-		entry.ProxyURL = strings.TrimSpace(entry.ProxyURL)
-		entry.ProxyID = strings.TrimSpace(entry.ProxyID)
-		entry.Headers = NormalizeHeaders(entry.Headers)
-		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
-		out = append(out, entry)
-	}
-	cfg.OpenCodeGoKey = out
-}
-
 // SanitizeGeminiKeys deduplicates and normalizes Gemini credentials.
 func (cfg *Config) SanitizeGeminiKeys() {
 	if cfg == nil {
@@ -1210,7 +1073,6 @@ func SaveConfigPreserveComments(configFile string, cfg *Config) error {
 	// Remove deprecated sections before merging back the sanitized config.
 	removeLegacyAuthBlock(original.Content[0])
 	removeLegacyOpenAICompatAPIKeys(original.Content[0])
-	removeLegacyAmpKeys(original.Content[0])
 	removeLegacyGenerativeLanguageKeys(original.Content[0])
 
 	// Merge generated into original in-place, preserving comments/order of existing nodes.
@@ -1858,16 +1720,6 @@ func removeLegacyOpenAICompatAPIKeys(root *yaml.Node) {
 			removeMapKey(seq.Content[i], "api-keys")
 		}
 	}
-}
-
-func removeLegacyAmpKeys(root *yaml.Node) {
-	if root == nil || root.Kind != yaml.MappingNode {
-		return
-	}
-	removeMapKey(root, "amp-upstream-url")
-	removeMapKey(root, "amp-upstream-api-key")
-	removeMapKey(root, "amp-restrict-management-to-localhost")
-	removeMapKey(root, "amp-model-mappings")
 }
 
 func removeLegacyGenerativeLanguageKeys(root *yaml.Node) {

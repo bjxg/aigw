@@ -11,11 +11,10 @@ import (
 )
 
 const (
-	DefaultRequestBodyLimit   int64 = 16 << 20
-	ManagementBodyLimit       int64 = 2 << 20
-	ConfigYAMLBodyLimit       int64 = 2 << 20
-	AuthFileBodyLimit         int64 = 2 << 20
-	VertexCredentialBodyLimit int64 = 2 << 20
+	DefaultRequestBodyLimit int64 = 16 << 20
+	ManagementBodyLimit     int64 = 2 << 20
+	ConfigYAMLBodyLimit     int64 = 2 << 20
+	AuthFileBodyLimit       int64 = 2 << 20
 )
 
 var ErrBodyTooLarge = errors.New("request body too large")

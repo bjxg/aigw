@@ -21,7 +21,6 @@ func (h *Handler) GetDashboardSummary(c *gin.Context) {
 	geminiCount := 0
 	claudeCount := 0
 	codexCount := 0
-	vertexCount := 0
 	openaiCount := 0
 	apiKeyCount := 0
 
@@ -29,12 +28,11 @@ func (h *Handler) GetDashboardSummary(c *gin.Context) {
 		geminiCount = len(cfg.GeminiKey)
 		claudeCount = len(cfg.ClaudeKey)
 		codexCount = len(cfg.CodexKey)
-		vertexCount = len(cfg.VertexCompatAPIKey)
 		openaiCount = len(cfg.OpenAICompatibility)
 	}
 	apiKeyCount = len(usage.ListAPIKeys())
 
-	providerTotal := geminiCount + claudeCount + codexCount + vertexCount + openaiCount
+	providerTotal := geminiCount + claudeCount + codexCount + openaiCount
 
 	// ── Usage KPIs (from SQLite — persists across restarts) ──
 	daysStr := c.DefaultQuery("days", "7")
@@ -65,7 +63,6 @@ func (h *Handler) GetDashboardSummary(c *gin.Context) {
 			"gemini_keys":      geminiCount,
 			"claude_keys":      claudeCount,
 			"codex_keys":       codexCount,
-			"vertex_keys":      vertexCount,
 			"openai_providers": openaiCount,
 		},
 		"trends": trends,

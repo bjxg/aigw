@@ -18,9 +18,9 @@ const (
 
 func providerUpstreamBodyReadLimit(provider string) upstreamBodyReadLimit {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "codex", "codex-websocket", "claude", "gemini", "gemini-cli", "gemini-vertex", "antigravity":
+	case "codex", "codex-websocket", "claude", "gemini", "gemini-cli", "antigravity":
 		return upstreamBodyReadLimit{responseBytes: 64 << 20, errorBytes: 2 << 20}
-	case "qwen", "kimi", "iflow", "opencode-go":
+	case "qwen", "kimi", "iflow":
 		return upstreamBodyReadLimit{responseBytes: 32 << 20, errorBytes: 2 << 20}
 	default:
 		return upstreamBodyReadLimit{responseBytes: defaultUpstreamResponseBodyLimit, errorBytes: defaultUpstreamErrorBodyLimit}

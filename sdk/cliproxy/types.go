@@ -54,20 +54,11 @@ type APIKeyClientResult struct {
 	// GeminiKeyCount is the number of Gemini API keys loaded
 	GeminiKeyCount int
 
-	// VertexCompatKeyCount is the number of Vertex-compatible API keys loaded
-	VertexCompatKeyCount int
-
 	// ClaudeKeyCount is the number of Claude API keys loaded
 	ClaudeKeyCount int
 
 	// CodexKeyCount is the number of Codex API keys loaded
 	CodexKeyCount int
-
-	// BedrockKeyCount is the number of AWS Bedrock credentials loaded
-	BedrockKeyCount int
-
-	// OpenCodeGoKeyCount is the number of OpenCode Go API keys loaded
-	OpenCodeGoKeyCount int
 
 	// OpenAICompatCount is the number of OpenAI compatibility API keys loaded
 	OpenAICompatCount int

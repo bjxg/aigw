@@ -12,10 +12,7 @@ const (
 	RuntimeSettingGeminiKeys           = "gemini-api-key"
 	RuntimeSettingCodexKeys            = "codex-api-key"
 	RuntimeSettingClaudeKeys           = "claude-api-key"
-	RuntimeSettingBedrockKeys          = "bedrock-api-key"
-	RuntimeSettingOpenCodeGoKeys       = "opencode-go-api-key"
 	RuntimeSettingOpenAICompatibility  = "openai-compatibility"
-	RuntimeSettingVertexCompatKeys     = "vertex-api-key"
 	RuntimeSettingClaudeHeaderDefaults = "claude-header-defaults"
 	RuntimeSettingKimiHeaderDefaults   = "kimi-header-defaults"
 	RuntimeSettingIdentityFingerprint  = "identity-fingerprint"
@@ -98,50 +95,6 @@ func runtimeSettingSpecs() []runtimeSettingSpec {
 			},
 		},
 		{
-			key: RuntimeSettingBedrockKeys,
-			meaningful: func(cfg *config.Config) bool {
-				return len(cfg.BedrockKey) > 0
-			},
-			value: func(cfg *config.Config) any {
-				holder := &config.Config{BedrockKey: append([]config.BedrockKey(nil), cfg.BedrockKey...)}
-				holder.SanitizeBedrockKeys()
-				return holder.BedrockKey
-			},
-			apply: func(cfg *config.Config, raw json.RawMessage) bool {
-				var value []config.BedrockKey
-				if err := json.Unmarshal(raw, &value); err != nil {
-					log.Warnf("usage: decode %s: %v", RuntimeSettingBedrockKeys, err)
-					return false
-				}
-				holder := &config.Config{BedrockKey: value}
-				holder.SanitizeBedrockKeys()
-				cfg.BedrockKey = holder.BedrockKey
-				return true
-			},
-		},
-		{
-			key: RuntimeSettingOpenCodeGoKeys,
-			meaningful: func(cfg *config.Config) bool {
-				return len(cfg.OpenCodeGoKey) > 0
-			},
-			value: func(cfg *config.Config) any {
-				holder := &config.Config{OpenCodeGoKey: append([]config.OpenCodeGoKey(nil), cfg.OpenCodeGoKey...)}
-				holder.SanitizeOpenCodeGoKeys()
-				return holder.OpenCodeGoKey
-			},
-			apply: func(cfg *config.Config, raw json.RawMessage) bool {
-				var value []config.OpenCodeGoKey
-				if err := json.Unmarshal(raw, &value); err != nil {
-					log.Warnf("usage: decode %s: %v", RuntimeSettingOpenCodeGoKeys, err)
-					return false
-				}
-				holder := &config.Config{OpenCodeGoKey: value}
-				holder.SanitizeOpenCodeGoKeys()
-				cfg.OpenCodeGoKey = holder.OpenCodeGoKey
-				return true
-			},
-		},
-		{
 			key: RuntimeSettingOpenAICompatibility,
 			meaningful: func(cfg *config.Config) bool {
 				return len(cfg.OpenAICompatibility) > 0
@@ -160,28 +113,6 @@ func runtimeSettingSpecs() []runtimeSettingSpec {
 				holder := &config.Config{OpenAICompatibility: value}
 				holder.SanitizeOpenAICompatibility()
 				cfg.OpenAICompatibility = holder.OpenAICompatibility
-				return true
-			},
-		},
-		{
-			key: RuntimeSettingVertexCompatKeys,
-			meaningful: func(cfg *config.Config) bool {
-				return len(cfg.VertexCompatAPIKey) > 0
-			},
-			value: func(cfg *config.Config) any {
-				holder := &config.Config{VertexCompatAPIKey: append([]config.VertexCompatKey(nil), cfg.VertexCompatAPIKey...)}
-				holder.SanitizeVertexCompatKeys()
-				return holder.VertexCompatAPIKey
-			},
-			apply: func(cfg *config.Config, raw json.RawMessage) bool {
-				var value []config.VertexCompatKey
-				if err := json.Unmarshal(raw, &value); err != nil {
-					log.Warnf("usage: decode %s: %v", RuntimeSettingVertexCompatKeys, err)
-					return false
-				}
-				holder := &config.Config{VertexCompatAPIKey: value}
-				holder.SanitizeVertexCompatKeys()
-				cfg.VertexCompatAPIKey = holder.VertexCompatAPIKey
 				return true
 			},
 		},

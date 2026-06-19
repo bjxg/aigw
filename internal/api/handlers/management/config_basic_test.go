@@ -116,21 +116,6 @@ func TestSanitizeConfigForAPI(t *testing.T) {
 				ExcludedModels: []string{"gpt-old"},
 			},
 		},
-		OpenCodeGoKey: []config.OpenCodeGoKey{
-			{
-				APIKey:         "sk-goXXXX1234000000",
-				Name:           "OpenCode Go 渠道",
-				ProxyURL:       "https://proxy.example.com/go",
-				ExcludedModels: []string{"minimax-m2.5"},
-			},
-		},
-		AmpCode: config.AmpCode{
-			UpstreamURL:    "https://amp.example.com/api",
-			UpstreamAPIKey: "sk-ampXXXX1234000000",
-			ModelMappings: []config.AmpModelMapping{
-				{From: "claude-opus-4.5", To: "claude-sonnet-4"},
-			},
-		},
 	}
 
 	sanitized := sanitizeConfigForAPI(cfg)
@@ -191,19 +176,6 @@ func TestSanitizeConfigForAPI(t *testing.T) {
 		}
 	}
 
-	// ── Verify OpenCode Go keys ──
-	for _, c := range sanitized.OpenCodeGoKey {
-		if c.APIKey == "sk-goXXXX1234000000" {
-			t.Error("OpenCodeGoKey: api-key not masked")
-		}
-		if c.Name == "OpenCode Go 渠道" {
-			t.Error("OpenCodeGoKey: name not masked")
-		}
-		if c.ProxyURL == "https://proxy.example.com/go" {
-			t.Error("OpenCodeGoKey: proxy-url not masked")
-		}
-	}
-
 	// ── Verify Provider ExcludedModels are stripped ──
 	for _, g := range sanitized.GeminiKey {
 		if g.ExcludedModels != nil {
@@ -218,11 +190,6 @@ func TestSanitizeConfigForAPI(t *testing.T) {
 	for _, c := range sanitized.CodexKey {
 		if c.ExcludedModels != nil {
 			t.Error("CodexKey: excluded-models not cleared")
-		}
-	}
-	for _, c := range sanitized.OpenCodeGoKey {
-		if c.ExcludedModels != nil {
-			t.Error("OpenCodeGoKey: excluded-models not cleared")
 		}
 	}
 
@@ -245,14 +212,6 @@ func TestSanitizeConfigForAPI(t *testing.T) {
 	}
 	if sanitized.TLS.Key == "/etc/ssl/key.pem" {
 		t.Error("TLS.Key not masked")
-	}
-
-	// ── Verify Amp upstream is masked ──
-	if sanitized.AmpCode.UpstreamURL == "https://amp.example.com/api" {
-		t.Error("AmpCode.UpstreamURL not masked")
-	}
-	if sanitized.AmpCode.ModelMappings != nil {
-		t.Error("AmpCode.ModelMappings not cleared")
 	}
 
 	// ── Verify global ProxyURL is masked ──

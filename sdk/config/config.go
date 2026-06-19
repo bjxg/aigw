@@ -18,7 +18,7 @@ type RoutingPathRoute = internalconfig.RoutingPathRoute
 type ChannelGroupMatch = internalconfig.ChannelGroupMatch
 type TLSConfig = internalconfig.TLSConfig
 type RemoteManagement = internalconfig.RemoteManagement
-type AmpCode = internalconfig.AmpCode
+
 type PayloadConfig = internalconfig.PayloadConfig
 type PayloadRule = internalconfig.PayloadRule
 type PayloadFilterRule = internalconfig.PayloadFilterRule
@@ -27,11 +27,6 @@ type PayloadModelRule = internalconfig.PayloadModelRule
 type GeminiKey = internalconfig.GeminiKey
 type CodexKey = internalconfig.CodexKey
 type ClaudeKey = internalconfig.ClaudeKey
-type BedrockKey = internalconfig.BedrockKey
-type BedrockModel = internalconfig.BedrockModel
-type OpenCodeGoKey = internalconfig.OpenCodeGoKey
-type VertexCompatKey = internalconfig.VertexCompatKey
-type VertexCompatModel = internalconfig.VertexCompatModel
 type OpenAICompatibility = internalconfig.OpenAICompatibility
 type OpenAICompatibilityAPIKey = internalconfig.OpenAICompatibilityAPIKey
 type OpenAICompatibilityModel = internalconfig.OpenAICompatibilityModel
@@ -40,7 +35,6 @@ type TLS = internalconfig.TLSConfig
 
 const (
 	DefaultPanelGitHubRepository = internalconfig.DefaultPanelGitHubRepository
-	DefaultBedrockRegion         = internalconfig.DefaultBedrockRegion
 )
 
 func LoadConfig(configFile string) (*Config, error) { return internalconfig.LoadConfig(configFile) }
