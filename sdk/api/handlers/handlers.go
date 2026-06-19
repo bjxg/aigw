@@ -615,6 +615,10 @@ func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType
 	if errMsg != nil {
 		return nil, nil, errMsg
 	}
+	providers = h.filterProvidersBySourceFormat(providers, handlerType, alt)
+	if len(providers) == 0 {
+		return nil, nil, unsupportedSourceFormatError(handlerType, modelName)
+	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
 	payload := rawJSON
@@ -662,6 +666,10 @@ func (h *BaseAPIHandler) ExecuteCountWithAuthManager(ctx context.Context, handle
 	providers, normalizedModel, errMsg := h.getRequestDetails(ctx, modelName)
 	if errMsg != nil {
 		return nil, nil, errMsg
+	}
+	providers = h.filterProvidersBySourceFormat(providers, handlerType, alt)
+	if len(providers) == 0 {
+		return nil, nil, unsupportedSourceFormatError(handlerType, modelName)
 	}
 	reqMeta := requestExecutionMetadata(ctx)
 	reqMeta[coreexecutor.RequestedModelMetadataKey] = normalizedModel
@@ -712,6 +720,13 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 	if errMsg != nil {
 		errChan := make(chan *interfaces.ErrorMessage, 1)
 		errChan <- errMsg
+		close(errChan)
+		return nil, nil, errChan
+	}
+	providers = h.filterProvidersBySourceFormat(providers, handlerType, alt)
+	if len(providers) == 0 {
+		errChan := make(chan *interfaces.ErrorMessage, 1)
+		errChan <- unsupportedSourceFormatError(handlerType, modelName)
 		close(errChan)
 		return nil, nil, errChan
 	}
@@ -950,6 +965,54 @@ func scopedProvidersForModel(modelName string, groups []string) []string {
 		}
 	}
 	return providers
+}
+
+// sourceFormatProvider is an optional capability implemented by executors that
+// declare which client-side source formats (and alt endpoints) they can handle.
+// Executors not implementing it are treated as compatible with any format to
+// preserve backwards compatibility.
+type sourceFormatProvider interface {
+	SupportsSourceFormat(sourceFormat, alt string) bool
+}
+
+// filterProvidersBySourceFormat narrows the provider list to those whose
+// registered executor declares support for the requested source format / alt.
+// Providers whose executor does not implement sourceFormatProvider are kept
+// (backwards compatible). This prevents a chat-completions request from being
+// routed to an executor that only understands a different wire format (e.g.
+// Codex /responses), which would otherwise forward an incompatible payload.
+func (h *BaseAPIHandler) filterProvidersBySourceFormat(providers []string, sourceFormat, alt string) []string {
+	if h == nil || h.AuthManager == nil || len(providers) == 0 {
+		return providers
+	}
+	filtered := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		exec, ok := h.AuthManager.Executor(provider)
+		if !ok {
+			// Unknown executor; keep so the auth manager can surface the
+			// canonical "no auth" error downstream.
+			filtered = append(filtered, provider)
+			continue
+		}
+		if sf, ok := exec.(sourceFormatProvider); ok {
+			if sf.SupportsSourceFormat(sourceFormat, alt) {
+				filtered = append(filtered, provider)
+			}
+			continue
+		}
+		// Executor does not declare format support; keep for backwards compat.
+		filtered = append(filtered, provider)
+	}
+	return filtered
+}
+
+// unsupportedSourceFormatError builds a standard API error for the case where
+// no registered provider executor can handle the requested source format.
+func unsupportedSourceFormatError(handlerType, modelName string) *interfaces.ErrorMessage {
+	return &interfaces.ErrorMessage{
+		StatusCode: http.StatusBadRequest,
+		Error:      fmt.Errorf(`{"error":{"message":"no provider supports source format %q for model %s","type":"invalid_request_error","code":"unsupported_source_format"}}`, handlerType, modelName),
+	}
 }
 
 func routeContextFromExecutionContext(ctx context.Context) *internalrouting.PathRouteContext {

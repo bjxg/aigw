@@ -35,6 +35,29 @@ func NewOpenAICompatExecutor(provider string, cfg *config.Config) *OpenAICompatE
 // Identifier implements cliproxyauth.ProviderExecutor.
 func (e *OpenAICompatExecutor) Identifier() string { return e.provider }
 
+// SupportsSourceFormat reports whether this executor can handle the given
+// client source format and alt endpoint. OpenAI-compatible executors always
+// translate to the "openai" target format (or "openai-response" for the
+// /responses/compact alt). Because cross-format request transformers are not
+// registered in production, only same-format requests are accepted so that
+// chat-completions payloads are not misrouted to incompatible providers.
+//
+// The provider-native fallback (sourceFormat == e.provider) preserves existing
+// behaviour for non-OpenAI providers bound to this generic executor via the
+// default binding (e.g. gemini-cli).
+func (e *OpenAICompatExecutor) SupportsSourceFormat(sourceFormat, alt string) bool {
+	if sourceFormat == "openai" {
+		return true
+	}
+	if sourceFormat == "openai-response" && alt == "responses/compact" {
+		return true
+	}
+	if e.provider != "" && sourceFormat == e.provider {
+		return true
+	}
+	return false
+}
+
 // PrepareRequest injects OpenAI-compatible credentials into the outgoing HTTP request.
 func (e *OpenAICompatExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Auth) error {
 	if req == nil {

@@ -55,6 +55,13 @@ func NewGeminiExecutor(cfg *config.Config) *GeminiExecutor {
 // Identifier returns the executor identifier.
 func (e *GeminiExecutor) Identifier() string { return "gemini" }
 
+// SupportsSourceFormat reports whether this executor can handle the given
+// client source format. The Gemini executor always translates to the "gemini"
+// target format, so it only accepts gemini-protocol requests.
+func (e *GeminiExecutor) SupportsSourceFormat(sourceFormat, alt string) bool {
+	return sourceFormat == "gemini"
+}
+
 // PrepareRequest injects Gemini credentials into the outgoing HTTP request.
 func (e *GeminiExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Auth) error {
 	if req == nil {

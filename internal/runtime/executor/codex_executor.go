@@ -33,8 +33,16 @@ const (
 
 var dataTag = []byte("data:")
 
+// ensureTranslatedCodexModel overwrites the body's "model" field with the
+// resolved upstream model name (baseModel). This is required because the
+// request payload carries the client-visible model alias (e.g.
+// "MiniMax-M2.7-highspeed") which the upstream Codex API does not recognise.
+// The auth layer resolves the alias to the upstream name (e.g. "MiniMax-Mx")
+// and passes it via req.Model, so baseModel is authoritative. This mirrors the
+// behaviour of OpenAICompatExecutor.overrideModel and the Codex websocket
+// executor (which uses sjson.SetBytes unconditionally).
 func ensureTranslatedCodexModel(body []byte, fallback string) []byte {
-	if strings.TrimSpace(gjson.GetBytes(body, "model").String()) != "" {
+	if len(body) == 0 {
 		return body
 	}
 	body, _ = sjson.SetBytes(body, "model", fallback)
@@ -121,6 +129,19 @@ type CodexExecutor struct {
 func NewCodexExecutor(cfg *config.Config) *CodexExecutor { return &CodexExecutor{cfg: cfg} }
 
 func (e *CodexExecutor) Identifier() string { return "codex" }
+
+// SupportsSourceFormat reports whether this executor can handle the given
+// client source format. Codex speaks the OpenAI Responses wire format, so it
+// only accepts "openai-response" requests (the /v1/responses entrypoint and
+// the /responses/compact alt). This prevents chat-completions ("openai")
+// payloads from being forwarded to Codex as if they were Responses payloads.
+//
+// Note: image-generation alts (images/generations, images/edits) bypass the
+// ExecuteWithAuthManager filter via a direct AuthManager.Execute call, so they
+// are unaffected by this declaration.
+func (e *CodexExecutor) SupportsSourceFormat(sourceFormat, alt string) bool {
+	return sourceFormat == "openai-response"
+}
 
 // PrepareRequest injects Codex credentials into the outgoing HTTP request.
 func (e *CodexExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Auth) error {

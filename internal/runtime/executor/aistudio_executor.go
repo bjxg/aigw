@@ -46,6 +46,13 @@ func NewAIStudioExecutor(cfg *config.Config, provider string, relay *wsrelay.Man
 // Identifier returns the executor identifier.
 func (e *AIStudioExecutor) Identifier() string { return "aistudio" }
 
+// SupportsSourceFormat reports whether this executor can handle the given
+// client source format. AI Studio translates to the "gemini" target format,
+// so it only accepts gemini-protocol requests.
+func (e *AIStudioExecutor) SupportsSourceFormat(sourceFormat, alt string) bool {
+	return sourceFormat == "gemini"
+}
+
 // PrepareRequest prepares the HTTP request for execution (no-op for AI Studio).
 func (e *AIStudioExecutor) PrepareRequest(_ *http.Request, _ *cliproxyauth.Auth) error {
 	return nil

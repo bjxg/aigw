@@ -392,6 +392,9 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 
 	requestedModel := payloadRequestedModel(opts, req.Model)
 	body = applyPayloadConfigWithRoot(e.cfg, baseModel, to, "", body, body, requestedModel)
+	// Overwrite the client-visible model alias with the resolved upstream model
+	// name, matching ensureTranslatedCodexModel in the HTTP executor path.
+	body, _ = sjson.SetBytes(body, "model", baseModel)
 
 	httpURL := strings.TrimSuffix(baseURL, "/") + "/responses"
 	wsURL, err := buildCodexResponsesWebsocketURL(httpURL)
@@ -1327,6 +1330,15 @@ func NewCodexAutoExecutor(cfg *config.Config) *CodexAutoExecutor {
 }
 
 func (e *CodexAutoExecutor) Identifier() string { return "codex" }
+
+// SupportsSourceFormat reports whether this executor can handle the given
+// client source format. Codex speaks the OpenAI Responses wire format, so it
+// only accepts "openai-response" requests. This is the actually-registered
+// executor type (CodexAutoExecutor holds CodexExecutor via a named field, so
+// the CodexExecutor.SupportsSourceFormat method does not promote here).
+func (e *CodexAutoExecutor) SupportsSourceFormat(sourceFormat, alt string) bool {
+	return sourceFormat == "openai-response"
+}
 
 func (e *CodexAutoExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Auth) error {
 	if e == nil || e.httpExec == nil {

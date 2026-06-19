@@ -40,6 +40,13 @@ func NewClaudeExecutor(cfg *config.Config) *ClaudeExecutor { return &ClaudeExecu
 
 func (e *ClaudeExecutor) Identifier() string { return "claude" }
 
+// SupportsSourceFormat reports whether this executor can handle the given
+// client source format. The Claude executor always translates to the "claude"
+// target format, so it only accepts claude-protocol requests.
+func (e *ClaudeExecutor) SupportsSourceFormat(sourceFormat, alt string) bool {
+	return sourceFormat == "claude"
+}
+
 // PrepareRequest injects Claude credentials into the outgoing HTTP request.
 func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Auth) error {
 	if req == nil {
