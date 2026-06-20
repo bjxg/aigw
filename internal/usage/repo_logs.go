@@ -625,10 +625,23 @@ func (r *gormLogRepo) QueryHourlySeries(ctx context.Context, apiKeyID int64, hou
 		query = query.Where("api_key_id = ?", apiKeyID)
 	}
 
-	// Token aggregation by hour
+	// Token aggregation by hour. NOTE: the SUM() expressions MUST keep the
+	// snake_case aliases that match the HourlyTokenPoint struct field tags.
+	// On PostgreSQL, expression columns without an explicit alias get
+	// auto-generated names like "sum"/"sum_1"/... that don't match the
+	// struct fields, so GORM scans the result with all token counters left
+	// at their zero value (which is exactly the "model has requests but
+	// token chart is 0" symptom).
 	hourExpr := dateTruncSQL("timestamp", "hour")
 	var tokens []HourlyTokenPoint
-	err := query.Select(hourExpr + " as hour, COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(reasoning_tokens),0), COALESCE(SUM(cached_tokens),0), COALESCE(SUM(total_tokens),0)").
+	err := query.Select(
+		hourExpr + " as hour, " +
+			"COALESCE(SUM(input_tokens),0) as input_tokens, " +
+			"COALESCE(SUM(output_tokens),0) as output_tokens, " +
+			"COALESCE(SUM(reasoning_tokens),0) as reasoning_tokens, " +
+			"COALESCE(SUM(cached_tokens),0) as cached_tokens, " +
+			"COALESCE(SUM(total_tokens),0) as total_tokens",
+	).
 		Group("hour").
 		Order("hour").
 		Find(&tokens).Error
