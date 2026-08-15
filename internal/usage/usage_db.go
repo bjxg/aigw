@@ -449,11 +449,11 @@ func QueryLogContentPart(id int64, part string) (LogContentPartResult, error) {
 
 // DailySeriesPoint holds one day of aggregated usage data.
 type DailySeriesPoint struct {
-	Date         string `json:"date"`
-	Requests     int    `json:"requests"`
-	FailedReq    int    `json:"failed_requests"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
+	Date           string `json:"date"`
+	Requests       int    `json:"requests"`
+	FailedRequests int    `json:"failed_requests" gorm:"column:failed_requests"`
+	InputTokens    int    `json:"input_tokens"`
+	OutputTokens   int    `json:"output_tokens"`
 }
 
 // ModelDistributionPoint holds aggregated usage data for a single model.
