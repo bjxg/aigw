@@ -649,6 +649,7 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.DELETE("/users/:id", s.mgmt.DeleteUser)
 
 		mgmt.GET("/api-key-entries", s.mgmt.GetAPIKeyEntries)
+		mgmt.POST("/api-key-entries", s.mgmt.PostAPIKeyEntry)
 		mgmt.PUT("/api-key-entries", s.mgmt.PutAPIKeyEntries)
 		mgmt.PATCH("/api-key-entries", s.mgmt.PatchAPIKeyEntry)
 		mgmt.DELETE("/api-key-entries", s.mgmt.DeleteAPIKeyEntry)

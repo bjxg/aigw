@@ -99,6 +99,72 @@ func GormListAPIKeysByUserID(userID int64) []APIKeyRow {
 	return result
 }
 
+// APIKeyPageFilter describes the filtering and pagination options for API key listing.
+type APIKeyPageFilter struct {
+	Search       string // matches name or key (case-insensitive substring)
+	Status       string // "enabled" or "disabled"; any other value means all
+	UserID       int64  // 0 = all users, -1 = unassigned only, >0 = specific user
+	ChannelGroup string // matches allowed channel groups (case-insensitive)
+	Page         int
+	PageSize     int
+}
+
+// GormListAPIKeysPage retrieves a filtered, paginated list of API key entries plus the total count.
+func GormListAPIKeysPage(filter APIKeyPageFilter) ([]APIKeyRow, int64) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil, 0
+	}
+
+	query := gormDB.Model(&APIKey{})
+	if search := strings.TrimSpace(filter.Search); search != "" {
+		like := "%" + strings.ToLower(search) + "%"
+		query = query.Where("LOWER(name) LIKE ? OR LOWER(key) LIKE ?", like, like)
+	}
+	switch strings.ToLower(strings.TrimSpace(filter.Status)) {
+	case "enabled":
+		query = query.Where("disabled = ?", false)
+	case "disabled":
+		query = query.Where("disabled = ?", true)
+	}
+	if filter.UserID > 0 {
+		query = query.Where("user_id = ?", filter.UserID)
+	} else if filter.UserID == -1 {
+		query = query.Where("user_id IS NULL OR user_id = 0")
+	}
+	if group := strings.TrimSpace(filter.ChannelGroup); group != "" {
+		query = query.Where("LOWER(allowed_channel_groups) LIKE ?", `%"`+strings.ToLower(group)+`"%`)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		log.Errorf("usage: GORM count api_keys page: %v", err)
+		return nil, 0
+	}
+
+	page, pageSize := filter.Page, filter.PageSize
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 500 {
+		pageSize = 500
+	}
+
+	var keys []APIKey
+	if err := query.Order("created_at ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&keys).Error; err != nil {
+		log.Errorf("usage: GORM list api_keys page: %v", err)
+		return nil, total
+	}
+	result := make([]APIKeyRow, 0, len(keys))
+	for _, k := range keys {
+		result = append(result, gormToAPIKeyRow(k))
+	}
+	return result, total
+}
+
 // GormGetAPIKey retrieves a single API key entry by key string using GORM.
 func GormGetAPIKey(key string) *APIKeyRow {
 	gormDB := getGormDB()

@@ -13,6 +13,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
+	log "github.com/sirupsen/logrus"
 )
 
 // refreshAPIKeyCache rebuilds the in-memory access provider cache from SQLite.
@@ -155,14 +156,90 @@ func (h *Handler) PutAPIKeyPermissionProfiles(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "ok"})
 }
 
+// migrateLegacyAPIKeysFromConfig imports API keys still present in the YAML
+// config (legacy storage) into the database so listings see them. Startup
+// migration normally clears these lists, so this is a cheap runtime fallback.
+func (h *Handler) migrateLegacyAPIKeysFromConfig() {
+	if h == nil || h.cfg == nil {
+		return
+	}
+	migrated := 0
+	for _, entry := range h.cfg.APIKeyEntries {
+		key := strings.TrimSpace(entry.Key)
+		if key == "" || usage.GetAPIKey(key) != nil {
+			continue
+		}
+		if err := usage.UpsertAPIKey(usage.APIKeyRowFromConfig(entry)); err != nil {
+			log.Errorf("management: migrate legacy api key entry %q: %v", key, err)
+		} else {
+			migrated++
+		}
+	}
+	for _, k := range h.cfg.APIKeys {
+		key := strings.TrimSpace(k)
+		if key == "" || usage.GetAPIKey(key) != nil {
+			continue
+		}
+		row := usage.APIKeyRow{Key: key}
+		if err := usage.UpsertAPIKey(row); err != nil {
+			log.Errorf("management: migrate legacy api key %q: %v", key, err)
+		} else {
+			migrated++
+		}
+	}
+	if migrated > 0 {
+		h.refreshAPIKeyCache()
+	}
+}
+
 // api-key-entries: backed by SQLite api_keys table
+// Query params: page, page_size, search, status (enabled|disabled), user_id (-1 = unassigned), channel_group.
+// When no pagination/filter params are present the full list is returned (legacy behavior).
 func (h *Handler) GetAPIKeyEntries(c *gin.Context) {
-	rows := usage.ListAPIKeys()
+	h.migrateLegacyAPIKeysFromConfig()
+
+	search := strings.TrimSpace(c.Query("search"))
+	status := strings.TrimSpace(c.Query("status"))
+	channelGroup := strings.TrimSpace(c.Query("channel_group"))
+	userID := int64(0)
+	if v := strings.TrimSpace(c.Query("user_id")); v != "" {
+		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+			userID = parsed
+		}
+	}
+	page, pageErr := strconv.Atoi(c.DefaultQuery("page", "0"))
+	if pageErr != nil {
+		page = 0
+	}
+	pageSize, sizeErr := strconv.Atoi(c.DefaultQuery("page_size", "0"))
+	if sizeErr != nil {
+		pageSize = 0
+	}
+
+	filtered := search != "" || (status != "" && status != "all") || userID != 0 || channelGroup != ""
+	if !filtered && (page <= 0 || pageSize <= 0) {
+		rows := usage.ListAPIKeys()
+		entries := make([]config.APIKeyEntry, 0, len(rows))
+		for _, r := range rows {
+			entries = append(entries, r.ToConfigEntry())
+		}
+		c.JSON(200, gin.H{"api-key-entries": entries, "total": len(entries)})
+		return
+	}
+
+	rows, total := usage.ListAPIKeysPage(usage.APIKeyPageFilter{
+		Search:       search,
+		Status:       status,
+		UserID:       userID,
+		ChannelGroup: channelGroup,
+		Page:         page,
+		PageSize:     pageSize,
+	})
 	entries := make([]config.APIKeyEntry, 0, len(rows))
 	for _, r := range rows {
 		entries = append(entries, r.ToConfigEntry())
 	}
-	c.JSON(200, gin.H{"api-key-entries": entries})
+	c.JSON(200, gin.H{"api-key-entries": entries, "total": total})
 }
 
 func (h *Handler) PutAPIKeyEntries(c *gin.Context) {
@@ -229,6 +306,7 @@ func (h *Handler) PatchAPIKeyEntry(c *gin.Context) {
 	type apiKeyEntryPatch struct {
 		Key                  *string   `json:"key"`
 		Name                 *string   `json:"name"`
+		Disabled             *bool     `json:"disabled"`
 		UserID               *int64    `json:"user-id"`
 		DailyLimit           *int      `json:"daily-limit"`
 		TotalQuota           *int      `json:"total-quota"`
@@ -326,6 +404,9 @@ func (h *Handler) PatchAPIKeyEntry(c *gin.Context) {
 	if body.Value.Name != nil {
 		entry.Name = strings.TrimSpace(*body.Value.Name)
 	}
+	if body.Value.Disabled != nil {
+		entry.Disabled = *body.Value.Disabled
+	}
 	if body.Value.DailyLimit != nil {
 		entry.DailyLimit = *body.Value.DailyLimit
 	}
@@ -393,6 +474,61 @@ func (h *Handler) PatchAPIKeyEntry(c *gin.Context) {
 	}
 	h.refreshAPIKeyCache()
 	c.JSON(200, gin.H{"status": "ok"})
+}
+
+// PostAPIKeyEntry handles POST /v0/management/api-key-entries — creates a single entry.
+func (h *Handler) PostAPIKeyEntry(c *gin.Context) {
+	var entry config.APIKeyEntry
+	if err := c.ShouldBindJSON(&entry); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	entry.Key = strings.TrimSpace(entry.Key)
+	if entry.Key == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "key is required"})
+		return
+	}
+	if existing := usage.GetAPIKey(entry.Key); existing != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "key already exists"})
+		return
+	}
+	entry.AllowedChannels = uniqueChannels(entry.AllowedChannels)
+	entry.AllowedChannelGroups = uniqueChannelGroups(entry.AllowedChannelGroups)
+	validated, errValidate := h.validateAllowedChannels(entry.AllowedChannels)
+	if errValidate != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errValidate.Error()})
+		return
+	}
+	entry.AllowedChannels = validated
+	validatedGroups, errValidate := h.validateAllowedChannelGroups(entry.AllowedChannelGroups)
+	if errValidate != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errValidate.Error()})
+		return
+	}
+	entry.AllowedChannelGroups = validatedGroups
+	var auths []*coreauth.Auth
+	if h != nil && h.authManager != nil {
+		auths = h.authManager.List()
+	}
+	routingCfg := config.RoutingConfig{}
+	if h != nil && h.cfg != nil {
+		routingCfg = h.cfg.Routing
+	}
+	if errValidate := validateRoutingAndAPIKeyRestrictions(&config.Config{
+		SDKConfig: config.SDKConfig{
+			APIKeyEntries: []config.APIKeyEntry{entry},
+		},
+		Routing: routingCfg,
+	}, auths); errValidate != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errValidate.Error()})
+		return
+	}
+	if err := usage.UpsertAPIKey(usage.APIKeyRowFromConfig(entry)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	h.refreshAPIKeyCache()
+	c.JSON(http.StatusCreated, gin.H{"status": "ok"})
 }
 
 func (h *Handler) DeleteAPIKeyEntry(c *gin.Context) {

@@ -96,6 +96,11 @@ func ListAPIKeysByUserID(userID int64) []APIKeyRow {
 	return GormListAPIKeysByUserID(userID)
 }
 
+// ListAPIKeysPage retrieves a filtered, paginated list of API key entries plus the total count.
+func ListAPIKeysPage(filter APIKeyPageFilter) ([]APIKeyRow, int64) {
+	return GormListAPIKeysPage(filter)
+}
+
 // GetAPIKey retrieves a single API key entry by key string.
 func GetAPIKey(key string) *APIKeyRow {
 	return GormGetAPIKey(key)
