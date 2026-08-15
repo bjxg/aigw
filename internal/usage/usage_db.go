@@ -34,15 +34,17 @@ type LogRow struct {
 
 // LogQueryParams holds filter/pagination parameters for QueryLogs.
 type LogQueryParams struct {
-	Page         int      // 1-based
-	Size         int      // rows per page
-	Days         int      // time range in days
-	APIKeyID     int64    // filter by api_key_id; 0 = no filter, -1 = system requests (api_key_id = 0)
-	UserID       int64    // filter by user_id; 0 = no filter
-	Model        string   // exact match filter
-	Status       string   // "success", "failed", or "" (all)
-	AuthIndexes  []string // optional auth_index IN (...) filter
-	ChannelNames []string // optional channel_name IN (...) filter
+	Page         int       // 1-based
+	Size         int       // rows per page
+	Days         int       // time range in days
+	StartUTC     time.Time // optional explicit range start (UTC, inclusive); overrides Days when set
+	EndUTC       time.Time // optional explicit range end (UTC, exclusive)
+	APIKeyID     int64     // filter by api_key_id; 0 = no filter, -1 = system requests (api_key_id = 0)
+	UserID       int64     // filter by user_id; 0 = no filter
+	Model        string    // exact match filter
+	Status       string    // "success", "failed", or "" (all)
+	AuthIndexes  []string  // optional auth_index IN (...) filter
+	ChannelNames []string  // optional channel_name IN (...) filter
 }
 
 // LogQueryResult holds the paginated query result.
@@ -152,6 +154,11 @@ func QueryFilters(days int) (FilterOptions, error) {
 	return GormQueryFilters(days)
 }
 
+// QueryFiltersRange returns the distinct filter values within an explicit [start, end) window.
+func QueryFiltersRange(startUTC, endUTC time.Time) (FilterOptions, error) {
+	return GormQueryFiltersRange(startUTC, endUTC)
+}
+
 // QueryStats returns aggregated statistics over the filtered dataset.
 func QueryStats(params LogQueryParams) (LogStats, error) {
 	return GormQueryStats(params)
@@ -211,9 +218,20 @@ func QueryDashboardKPI(days int) (DashboardKPI, error) {
 	return GormQueryDashboardKPI(days)
 }
 
+// QueryDashboardKPIRange returns aggregated KPI data for an explicit [start, end) window.
+func QueryDashboardKPIRange(startUTC, endUTC time.Time) (DashboardKPI, error) {
+	return GormQueryDashboardKPIRange(startUTC, endUTC)
+}
+
 // QueryDashboardTrends returns fixed-width trend buckets used by the dashboard.
 func QueryDashboardTrends(days int) (DashboardTrends, error) {
 	return GormQueryDashboardTrends(days)
+}
+
+// QueryDashboardTrendsRange returns trend buckets for an explicit [start, end) window.
+// days is the number of local days the window covers (1 = hourly buckets).
+func QueryDashboardTrendsRange(startUTC, endUTC time.Time, days int) (DashboardTrends, error) {
+	return GormQueryDashboardTrendsRange(startUTC, endUTC, days)
 }
 
 func emptyDashboardTrends(days int) DashboardTrends {
@@ -222,6 +240,16 @@ func emptyDashboardTrends(days int) DashboardTrends {
 	}
 	loc := getUsageLocation()
 	trends := dashboardTrendsFromBuckets(buildDashboardBuckets(days, loc))
+	trends.ThroughputSeries = throughputSeriesFromBuckets(buildRecentThroughputBucketsAt(time.Now(), loc))
+	return trends
+}
+
+func emptyDashboardTrendsRange(startUTC time.Time, days int) DashboardTrends {
+	if days < 1 {
+		days = 1
+	}
+	loc := getUsageLocation()
+	trends := dashboardTrendsFromBuckets(buildDashboardBucketsFrom(startUTC.In(loc), days, loc))
 	trends.ThroughputSeries = throughputSeriesFromBuckets(buildRecentThroughputBucketsAt(time.Now(), loc))
 	return trends
 }
@@ -260,6 +288,51 @@ func CutoffStartUTC(days int) time.Time {
 	return cutoffStartUTCAt(time.Now(), days)
 }
 
+// maxDateRangeDays caps the span of an explicit date range to keep bucketed
+// trend queries bounded.
+const maxDateRangeDays = 366
+
+// ParseDateRange parses YYYY-MM-DD start/end dates in the project-configured
+// timezone into a UTC [start, end) window plus the number of local days the
+// range covers. An empty side defaults to the other side (single day range).
+// A start after end is swapped so callers always get an ordered window.
+func ParseDateRange(startStr, endStr string) (startUTC, endUTC time.Time, days int, err error) {
+	startStr = strings.TrimSpace(startStr)
+	endStr = strings.TrimSpace(endStr)
+	if startStr == "" {
+		startStr = endStr
+	}
+	if endStr == "" {
+		endStr = startStr
+	}
+	if startStr == "" {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("usage: empty date range")
+	}
+
+	loc := getUsageLocation()
+	start, errStart := time.ParseInLocation("2006-01-02", startStr, loc)
+	if errStart != nil {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("usage: invalid start date %q", startStr)
+	}
+	end, errEnd := time.ParseInLocation("2006-01-02", endStr, loc)
+	if errEnd != nil {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("usage: invalid end date %q", endStr)
+	}
+	if end.Before(start) {
+		start, end = end, start
+	}
+	endExclusive := end.AddDate(0, 0, 1)
+	// Rounded division tolerates DST transitions (23h/25h days).
+	days = int(endExclusive.Sub(start).Hours()/24 + 0.5)
+	if days < 1 {
+		days = 1
+	}
+	if days > maxDateRangeDays {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("usage: date range exceeds %d days", maxDateRangeDays)
+	}
+	return start.UTC(), endExclusive.UTC(), days, nil
+}
+
 func localDayKeyAt(t time.Time) string {
 	loc := getUsageLocation()
 	return t.In(loc).Format("2006-01-02")
@@ -285,10 +358,16 @@ type dashboardBucket struct {
 const dashboardThroughputBucketCount = 7
 
 func buildDashboardBuckets(days int, loc *time.Location) []dashboardBucket {
+	return buildDashboardBucketsFrom(CutoffStartUTC(days).In(loc), days, loc)
+}
+
+// buildDashboardBucketsFrom builds trend buckets anchored at the given local
+// start-of-day. A single-day range yields 24 hourly buckets; longer ranges
+// yield one bucket per day.
+func buildDashboardBucketsFrom(start time.Time, days int, loc *time.Location) []dashboardBucket {
 	if loc == nil {
 		loc = time.Local
 	}
-	start := CutoffStartUTC(days).In(loc)
 	if days == 1 {
 		buckets := make([]dashboardBucket, 0, 24)
 		for i := 0; i < 24; i++ {
@@ -468,9 +547,19 @@ func QueryDailySeries(apiKeyID int64, days int) ([]DailySeriesPoint, error) {
 	return GormQueryDailySeries(apiKeyID, days)
 }
 
+// QueryDailySeriesRange returns per-day aggregates within an explicit [start, end) window.
+func QueryDailySeriesRange(apiKeyID int64, startUTC, endUTC time.Time) ([]DailySeriesPoint, error) {
+	return GormQueryDailySeriesRange(apiKeyID, startUTC, endUTC)
+}
+
 // QueryModelDistribution returns request count and token usage grouped by model for a given API key.
 func QueryModelDistribution(apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
 	return GormQueryModelDistribution(apiKeyID, days)
+}
+
+// QueryModelDistributionRange returns model distribution within an explicit [start, end) window.
+func QueryModelDistributionRange(apiKeyID int64, startUTC, endUTC time.Time) ([]ModelDistributionPoint, error) {
+	return GormQueryModelDistributionRange(apiKeyID, startUTC, endUTC)
 }
 
 // APIKeyDistributionPoint holds aggregated usage data for a single API key.
@@ -484,6 +573,11 @@ type APIKeyDistributionPoint struct {
 // QueryAPIKeyDistribution returns request count and token usage grouped by api_key.
 func QueryAPIKeyDistribution(days int) ([]APIKeyDistributionPoint, error) {
 	return GormQueryAPIKeyDistribution(days)
+}
+
+// QueryAPIKeyDistributionRange returns api_key distribution within an explicit [start, end) window.
+func QueryAPIKeyDistributionRange(startUTC, endUTC time.Time) ([]APIKeyDistributionPoint, error) {
+	return GormQueryAPIKeyDistributionRange(startUTC, endUTC)
 }
 
 // GetDBPath returns the file path of the database, or empty if not initialised.
@@ -513,6 +607,11 @@ type HourlyModelPoint struct {
 // QueryHourlySeries returns per-hour token and model aggregates for the last N hours.
 func QueryHourlySeries(apiKeyID int64, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
 	return GormQueryHourlySeries(apiKeyID, hours)
+}
+
+// QueryHourlySeriesRange returns per-hour aggregates within an explicit [start, end) window.
+func QueryHourlySeriesRange(apiKeyID int64, startUTC, endUTC time.Time) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
+	return GormQueryHourlySeriesRange(apiKeyID, startUTC, endUTC)
 }
 
 // EntityStatPoint holds aggregated usage data for a single entity (source or auth_index).

@@ -41,8 +41,16 @@ func (h *Handler) GetDashboardSummary(c *gin.Context) {
 		days = v
 	}
 
-	kpi, _ := usage.QueryDashboardKPI(days)
-	trends, _ := usage.QueryDashboardTrends(days)
+	var kpi usage.DashboardKPI
+	var trends usage.DashboardTrends
+	if startUTC, endUTC, rangeDays, ok := dateRangeQuery(c); ok {
+		days = rangeDays
+		kpi, _ = usage.QueryDashboardKPIRange(startUTC, endUTC)
+		trends, _ = usage.QueryDashboardTrendsRange(startUTC, endUTC, rangeDays)
+	} else {
+		kpi, _ = usage.QueryDashboardKPI(days)
+		trends, _ = usage.QueryDashboardTrends(days)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"kpi": gin.H{

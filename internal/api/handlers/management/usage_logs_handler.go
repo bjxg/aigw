@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
@@ -76,6 +77,10 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 		AuthIndexes:  authIndexes,
 		ChannelNames: channelNames,
 	}
+	if startUTC, endUTC, _, ok := dateRangeQuery(c); ok {
+		params.StartUTC = startUTC
+		params.EndUTC = endUTC
+	}
 
 	result, err := usage.QueryLogs(params)
 	if err != nil {
@@ -83,7 +88,12 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 		return
 	}
 
-	filters, err := usage.QueryFilters(params.Days)
+	var filters usage.FilterOptions
+	if !params.StartUTC.IsZero() {
+		filters, err = usage.QueryFiltersRange(params.StartUTC, params.EndUTC)
+	} else {
+		filters, err = usage.QueryFilters(params.Days)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -271,6 +281,22 @@ func (h *Handler) buildNameMaps() (keyNameMap, channelNameMap, authIndexChannelM
 	return
 }
 
+// dateRangeQuery parses optional start/end query params (YYYY-MM-DD) into a
+// UTC [start, end) window plus the number of local days covered.
+// ok is false when no date params are present or parsing fails.
+func dateRangeQuery(c *gin.Context) (startUTC, endUTC time.Time, days int, ok bool) {
+	startStr := strings.TrimSpace(c.Query("start"))
+	endStr := strings.TrimSpace(c.Query("end"))
+	if startStr == "" && endStr == "" {
+		return time.Time{}, time.Time{}, 0, false
+	}
+	start, end, days, err := usage.ParseDateRange(startStr, endStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, false
+	}
+	return start, end, days, true
+}
+
 func intQueryDefault(c *gin.Context, key string, def int) int {
 	v := strings.TrimSpace(c.Query(key))
 	if v == "" {
@@ -389,8 +415,19 @@ func (h *Handler) GetLogContent(c *gin.Context) {
 func (h *Handler) GetUsageChartData(c *gin.Context) {
 	apiKeyID := int64QueryDefault(c, "api_key_id", 0)
 	days := intQueryDefault(c, "days", 7)
+	startUTC, endUTC, _, hasRange := dateRangeQuery(c)
 
-	daily, err := usage.QueryDailySeries(apiKeyID, days)
+	var daily []usage.DailySeriesPoint
+	var models []usage.ModelDistributionPoint
+	var hourlyTokens []usage.HourlyTokenPoint
+	var hourlyModels []usage.HourlyModelPoint
+	var err error
+
+	if hasRange {
+		daily, err = usage.QueryDailySeriesRange(apiKeyID, startUTC, endUTC)
+	} else {
+		daily, err = usage.QueryDailySeries(apiKeyID, days)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -399,7 +436,11 @@ func (h *Handler) GetUsageChartData(c *gin.Context) {
 		daily = []usage.DailySeriesPoint{}
 	}
 
-	models, err := usage.QueryModelDistribution(apiKeyID, days)
+	if hasRange {
+		models, err = usage.QueryModelDistributionRange(apiKeyID, startUTC, endUTC)
+	} else {
+		models, err = usage.QueryModelDistribution(apiKeyID, days)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -408,7 +449,11 @@ func (h *Handler) GetUsageChartData(c *gin.Context) {
 		models = []usage.ModelDistributionPoint{}
 	}
 
-	hourlyTokens, hourlyModels, err := usage.QueryHourlySeries(apiKeyID, 24)
+	if hasRange {
+		hourlyTokens, hourlyModels, err = usage.QueryHourlySeriesRange(apiKeyID, startUTC, endUTC)
+	} else {
+		hourlyTokens, hourlyModels, err = usage.QueryHourlySeries(apiKeyID, 24)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -423,7 +468,11 @@ func (h *Handler) GetUsageChartData(c *gin.Context) {
 	// API Key distribution (only when not filtered by a single key)
 	var apikeyDist []usage.APIKeyDistributionPoint
 	if apiKeyID == 0 {
-		apikeyDist, err = usage.QueryAPIKeyDistribution(days)
+		if hasRange {
+			apikeyDist, err = usage.QueryAPIKeyDistributionRange(startUTC, endUTC)
+		} else {
+			apikeyDist, err = usage.QueryAPIKeyDistribution(days)
+		}
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

@@ -346,22 +346,23 @@ func (r *gormLogRepo) QueryFilters(ctx context.Context, days int) (FilterOptions
 	if days < 1 {
 		days = 7
 	}
+	return r.queryFiltersRange(ctx, CutoffStartUTC(days), time.Time{})
+}
 
-	cutoff := CutoffStartUTC(days)
-
+func (r *gormLogRepo) queryFiltersRange(ctx context.Context, startUTC, endUTC time.Time) (FilterOptions, error) {
 	keys, err := r.queryAPIKeyFilterItemsGorm(ctx)
 	if err != nil {
 		return FilterOptions{}, err
 	}
-	users, err := r.queryUserFilterItemsGorm(ctx, cutoff)
+	users, err := r.queryUserFilterItemsGorm(ctx, startUTC, endUTC)
 	if err != nil {
 		return FilterOptions{}, err
 	}
-	models, err := r.queryDistinctGorm(ctx, "model", cutoff)
+	models, err := r.queryDistinctGorm(ctx, "model", startUTC, endUTC)
 	if err != nil {
 		return FilterOptions{}, err
 	}
-	channels, err := r.queryDistinctGorm(ctx, "channel_name", cutoff)
+	channels, err := r.queryDistinctGorm(ctx, "channel_name", startUTC, endUTC)
 	if err != nil {
 		return FilterOptions{}, err
 	}
@@ -374,13 +375,16 @@ func (r *gormLogRepo) QueryFilters(ctx context.Context, days int) (FilterOptions
 	}, nil
 }
 
-func (r *gormLogRepo) queryDistinctGorm(ctx context.Context, column string, cutoff time.Time) ([]string, error) {
-	var results []string
-	err := r.db.WithContext(ctx).Model(&RequestLog{}).
+func (r *gormLogRepo) queryDistinctGorm(ctx context.Context, column string, startUTC, endUTC time.Time) ([]string, error) {
+	query := r.db.WithContext(ctx).Model(&RequestLog{}).
 		Distinct(column).
-		Where("timestamp >= ?", cutoff).
-		Where(fmt.Sprintf("%s != ''", column)).
-		Pluck(column, &results).Error
+		Where("timestamp >= ?", startUTC).
+		Where(fmt.Sprintf("%s != ''", column))
+	if !endUTC.IsZero() {
+		query = query.Where("timestamp < ?", endUTC)
+	}
+	var results []string
+	err := query.Pluck(column, &results).Error
 	if err != nil {
 		return nil, fmt.Errorf("usage: distinct %s: %w", column, err)
 	}
@@ -402,13 +406,17 @@ func (r *gormLogRepo) queryAPIKeyFilterItemsGorm(ctx context.Context) ([]APIKeyF
 	return results, nil
 }
 
-func (r *gormLogRepo) queryUserFilterItemsGorm(ctx context.Context, cutoff time.Time) ([]UserFilterItem, error) {
-	var results []UserFilterItem
-	err := r.db.WithContext(ctx).
+func (r *gormLogRepo) queryUserFilterItemsGorm(ctx context.Context, startUTC, endUTC time.Time) ([]UserFilterItem, error) {
+	query := r.db.WithContext(ctx).
 		Table("request_logs").
 		Select("DISTINCT \"user\".id, \"user\".name").
 		Joins("JOIN \"user\" ON \"user\".id = request_logs.user_id").
-		Where("request_logs.timestamp >= ? AND request_logs.user_id IS NOT NULL", cutoff).
+		Where("request_logs.timestamp >= ? AND request_logs.user_id IS NOT NULL", startUTC)
+	if !endUTC.IsZero() {
+		query = query.Where("request_logs.timestamp < ?", endUTC)
+	}
+	var results []UserFilterItem
+	err := query.
 		Order("\"user\".name").
 		Find(&results).Error
 	if err != nil {
@@ -426,10 +434,11 @@ func (r *gormLogRepo) QueryDashboardKPI(ctx context.Context, days int) (Dashboar
 	if days < 1 {
 		days = 7
 	}
-	cutoff := CutoffStartUTC(days)
+	return r.queryDashboardKPI(ctx, CutoffStartUTC(days), time.Time{})
+}
 
-	var kpi DashboardKPI
-	err := r.db.WithContext(ctx).Model(&RequestLog{}).
+func (r *gormLogRepo) queryDashboardKPI(ctx context.Context, startUTC, endUTC time.Time) (DashboardKPI, error) {
+	query := r.db.WithContext(ctx).Model(&RequestLog{}).
 		Select(`COUNT(*) as total_requests,
 			COALESCE(SUM(CASE WHEN failed = false THEN 1 ELSE 0 END), 0) as success_requests,
 			COALESCE(SUM(CASE WHEN failed = true THEN 1 ELSE 0 END), 0) as failed_requests,
@@ -439,8 +448,13 @@ func (r *gormLogRepo) QueryDashboardKPI(ctx context.Context, days int) (Dashboar
 			COALESCE(SUM(cached_tokens), 0) as cached_tokens,
 			COALESCE(SUM(total_tokens), 0) as total_tokens,
 			COALESCE(SUM(cost), 0) as total_cost`).
-		Where("timestamp >= ?", cutoff).
-		Scan(&kpi).Error
+		Where("timestamp >= ?", startUTC)
+	if !endUTC.IsZero() {
+		query = query.Where("timestamp < ?", endUTC)
+	}
+
+	var kpi DashboardKPI
+	err := query.Scan(&kpi).Error
 	if err != nil {
 		return DashboardKPI{}, fmt.Errorf("usage: dashboard KPI query: %w", err)
 	}
@@ -457,9 +471,16 @@ func (r *gormLogRepo) QueryDashboardTrends(ctx context.Context, days int) (Dashb
 	if days < 1 {
 		days = 7
 	}
+	return r.queryDashboardTrends(ctx, CutoffStartUTC(days), time.Time{}, days)
+}
+
+func (r *gormLogRepo) queryDashboardTrends(ctx context.Context, startUTC, endUTC time.Time, days int) (DashboardTrends, error) {
+	if days < 1 {
+		days = 1
+	}
 
 	loc := getUsageLocation()
-	buckets := buildDashboardBuckets(days, loc)
+	buckets := buildDashboardBucketsFrom(startUTC.In(loc), days, loc)
 	byKey := make(map[string]*dashboardBucket, len(buckets))
 	for i := range buckets {
 		byKey[buckets[i].key] = &buckets[i]
@@ -470,11 +491,14 @@ func (r *gormLogRepo) QueryDashboardTrends(ctx context.Context, days int) (Dashb
 		Failed      bool
 		TotalTokens int64
 	}
-	var rows []trendRow
-	err := r.db.WithContext(ctx).Model(&RequestLog{}).
+	query := r.db.WithContext(ctx).Model(&RequestLog{}).
 		Select("timestamp, failed, total_tokens").
-		Where("timestamp >= ?", CutoffStartUTC(days)).
-		Find(&rows).Error
+		Where("timestamp >= ?", startUTC)
+	if !endUTC.IsZero() {
+		query = query.Where("timestamp < ?", endUTC)
+	}
+	var rows []trendRow
+	err := query.Find(&rows).Error
 	if err != nil {
 		return DashboardTrends{}, fmt.Errorf("usage: query dashboard trends: %w", err)
 	}
@@ -567,6 +591,23 @@ func (r *gormLogRepo) QueryDailySeries(ctx context.Context, apiKeyID int64, days
 	return results, nil
 }
 
+func (r *gormLogRepo) queryDailySeriesRange(ctx context.Context, apiKeyID int64, startUTC, endUTC time.Time) ([]DailySeriesPoint, error) {
+	query := r.db.WithContext(ctx).Model(&RequestLog{})
+	query = applyTimeRangeAndAPIKeyFilter(query, apiKeyID, startUTC, endUTC)
+
+	dateExpr := dateTruncSQL("timestamp", "day")
+
+	var results []DailySeriesPoint
+	err := query.Select(dateExpr + " as date, COUNT(*) as requests, SUM(CASE WHEN failed = true THEN 1 ELSE 0 END) as failed_requests, COALESCE(SUM(input_tokens),0) as input_tokens, COALESCE(SUM(output_tokens),0) as output_tokens").
+		Group("date").
+		Order("date").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("usage: daily series range query: %w", err)
+	}
+	return results, nil
+}
+
 // --- QueryModelDistribution ---
 
 func (r *gormLogRepo) QueryModelDistribution(ctx context.Context, apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
@@ -589,19 +630,41 @@ func (r *gormLogRepo) QueryModelDistribution(ctx context.Context, apiKeyID int64
 	return results, nil
 }
 
+func (r *gormLogRepo) queryModelDistributionRange(ctx context.Context, apiKeyID int64, startUTC, endUTC time.Time) ([]ModelDistributionPoint, error) {
+	query := r.db.WithContext(ctx).Model(&RequestLog{})
+	query = applyTimeRangeAndAPIKeyFilter(query, apiKeyID, startUTC, endUTC)
+
+	var results []ModelDistributionPoint
+	err := query.Select("model, COUNT(*) as requests, COALESCE(SUM(total_tokens),0) as tokens").
+		Where("model != ''").
+		Group("model").
+		Order("requests DESC").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("usage: model distribution range query: %w", err)
+	}
+	return results, nil
+}
+
 // --- QueryAPIKeyDistribution ---
 
 func (r *gormLogRepo) QueryAPIKeyDistribution(ctx context.Context, days int) ([]APIKeyDistributionPoint, error) {
 	if days < 1 {
 		days = 7
 	}
+	return r.queryAPIKeyDistributionRange(ctx, CutoffStartUTC(days), time.Time{})
+}
 
-	cutoff := CutoffStartUTC(days)
-	var results []APIKeyDistributionPoint
-	err := r.db.WithContext(ctx).Model(&RequestLog{}).
+func (r *gormLogRepo) queryAPIKeyDistributionRange(ctx context.Context, startUTC, endUTC time.Time) ([]APIKeyDistributionPoint, error) {
+	query := r.db.WithContext(ctx).Model(&RequestLog{}).
 		Select("api_key_id, COALESCE(NULLIF(MAX(api_key_name),''), MAX(k.name), '') as name, COUNT(*) as requests, COALESCE(SUM(total_tokens),0) as tokens").
 		Joins("LEFT JOIN api_keys k ON k.id = api_key_id").
-		Where("timestamp >= ? AND api_key_id != 0", cutoff).
+		Where("timestamp >= ? AND api_key_id != 0", startUTC)
+	if !endUTC.IsZero() {
+		query = query.Where("timestamp < ?", endUTC)
+	}
+	var results []APIKeyDistributionPoint
+	err := query.
 		Group("api_key_id").
 		Order("requests DESC").
 		Find(&results).Error
@@ -619,8 +682,14 @@ func (r *gormLogRepo) QueryHourlySeries(ctx context.Context, apiKeyID int64, hou
 	}
 
 	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).UTC()
+	return r.queryHourlySeries(ctx, apiKeyID, cutoff, time.Time{})
+}
 
-	query := r.db.WithContext(ctx).Model(&RequestLog{}).Where("timestamp >= ?", cutoff)
+func (r *gormLogRepo) queryHourlySeries(ctx context.Context, apiKeyID int64, startUTC, endUTC time.Time) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
+	query := r.db.WithContext(ctx).Model(&RequestLog{}).Where("timestamp >= ?", startUTC)
+	if !endUTC.IsZero() {
+		query = query.Where("timestamp < ?", endUTC)
+	}
 	if apiKeyID != 0 {
 		query = query.Where("api_key_id = ?", apiKeyID)
 	}
@@ -927,8 +996,15 @@ func (r *gormLogRepo) QueryContentPartForUser(ctx context.Context, id int64, use
 
 // applyLogFilters applies common filter parameters to a GORM query.
 func applyLogFilters(query *gorm.DB, params LogQueryParams) *gorm.DB {
-	cutoff := CutoffStartUTC(params.Days)
-	query = query.Where("timestamp >= ?", cutoff)
+	if !params.StartUTC.IsZero() {
+		query = query.Where("timestamp >= ?", params.StartUTC)
+		if !params.EndUTC.IsZero() {
+			query = query.Where("timestamp < ?", params.EndUTC)
+		}
+	} else {
+		cutoff := CutoffStartUTC(params.Days)
+		query = query.Where("timestamp >= ?", cutoff)
+	}
 
 	if params.APIKeyID != 0 {
 		if params.APIKeyID == -1 {
@@ -962,6 +1038,18 @@ func applyLogFilters(query *gorm.DB, params LogQueryParams) *gorm.DB {
 func applyTimeAndAPIKeyFilter(query *gorm.DB, apiKeyID int64, days int) *gorm.DB {
 	cutoff := CutoffStartUTC(days)
 	query = query.Where("timestamp >= ?", cutoff)
+	if apiKeyID != 0 {
+		query = query.Where("api_key_id = ?", apiKeyID)
+	}
+	return query
+}
+
+// applyTimeRangeAndAPIKeyFilter applies an explicit [start, end) window + optional API key ID filter.
+func applyTimeRangeAndAPIKeyFilter(query *gorm.DB, apiKeyID int64, startUTC, endUTC time.Time) *gorm.DB {
+	query = query.Where("timestamp >= ?", startUTC)
+	if !endUTC.IsZero() {
+		query = query.Where("timestamp < ?", endUTC)
+	}
 	if apiKeyID != 0 {
 		query = query.Where("api_key_id = ?", apiKeyID)
 	}
@@ -1065,6 +1153,21 @@ func GormQueryFilters(days int) (FilterOptions, error) {
 	return repo.QueryFilters(context.Background(), days)
 }
 
+// GormQueryFiltersRange is the GORM-backed implementation of QueryFiltersRange.
+func GormQueryFiltersRange(startUTC, endUTC time.Time) (FilterOptions, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return FilterOptions{
+			APIKeys:  make([]APIKeyFilterItem, 0),
+			Users:    make([]UserFilterItem, 0),
+			Models:   make([]string, 0),
+			Channels: make([]string, 0),
+		}, nil
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.queryFiltersRange(context.Background(), startUTC, endUTC)
+}
+
 // GormQueryStats is the GORM-backed implementation of QueryStats.
 func GormQueryStats(params LogQueryParams) (LogStats, error) {
 	gormDB := getGormDB()
@@ -1115,6 +1218,16 @@ func GormQueryDashboardKPI(days int) (DashboardKPI, error) {
 	return repo.QueryDashboardKPI(context.Background(), days)
 }
 
+// GormQueryDashboardKPIRange is the GORM-backed implementation of QueryDashboardKPIRange.
+func GormQueryDashboardKPIRange(startUTC, endUTC time.Time) (DashboardKPI, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return DashboardKPI{}, nil
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.queryDashboardKPI(context.Background(), startUTC, endUTC)
+}
+
 // GormQueryDashboardTrends is the GORM-backed implementation of QueryDashboardTrends.
 func GormQueryDashboardTrends(days int) (DashboardTrends, error) {
 	gormDB := getGormDB()
@@ -1123,6 +1236,16 @@ func GormQueryDashboardTrends(days int) (DashboardTrends, error) {
 	}
 	repo := &gormLogRepo{db: gormDB}
 	return repo.QueryDashboardTrends(context.Background(), days)
+}
+
+// GormQueryDashboardTrendsRange is the GORM-backed implementation of QueryDashboardTrendsRange.
+func GormQueryDashboardTrendsRange(startUTC, endUTC time.Time, days int) (DashboardTrends, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return emptyDashboardTrendsRange(startUTC, days), nil
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.queryDashboardTrends(context.Background(), startUTC, endUTC, days)
 }
 
 // GormQueryDailySeries is the GORM-backed implementation of QueryDailySeries.
@@ -1135,6 +1258,16 @@ func GormQueryDailySeries(apiKeyID int64, days int) ([]DailySeriesPoint, error) 
 	return repo.QueryDailySeries(context.Background(), apiKeyID, days)
 }
 
+// GormQueryDailySeriesRange is the GORM-backed implementation of QueryDailySeriesRange.
+func GormQueryDailySeriesRange(apiKeyID int64, startUTC, endUTC time.Time) ([]DailySeriesPoint, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil, nil
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.queryDailySeriesRange(context.Background(), apiKeyID, startUTC, endUTC)
+}
+
 // GormQueryModelDistribution is the GORM-backed implementation of QueryModelDistribution.
 func GormQueryModelDistribution(apiKeyID int64, days int) ([]ModelDistributionPoint, error) {
 	gormDB := getGormDB()
@@ -1143,6 +1276,16 @@ func GormQueryModelDistribution(apiKeyID int64, days int) ([]ModelDistributionPo
 	}
 	repo := &gormLogRepo{db: gormDB}
 	return repo.QueryModelDistribution(context.Background(), apiKeyID, days)
+}
+
+// GormQueryModelDistributionRange is the GORM-backed implementation of QueryModelDistributionRange.
+func GormQueryModelDistributionRange(apiKeyID int64, startUTC, endUTC time.Time) ([]ModelDistributionPoint, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil, nil
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.queryModelDistributionRange(context.Background(), apiKeyID, startUTC, endUTC)
 }
 
 // GormQueryAPIKeyDistribution is the GORM-backed implementation of QueryAPIKeyDistribution.
@@ -1155,6 +1298,16 @@ func GormQueryAPIKeyDistribution(days int) ([]APIKeyDistributionPoint, error) {
 	return repo.QueryAPIKeyDistribution(context.Background(), days)
 }
 
+// GormQueryAPIKeyDistributionRange is the GORM-backed implementation of QueryAPIKeyDistributionRange.
+func GormQueryAPIKeyDistributionRange(startUTC, endUTC time.Time) ([]APIKeyDistributionPoint, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil, nil
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.queryAPIKeyDistributionRange(context.Background(), startUTC, endUTC)
+}
+
 // GormQueryHourlySeries is the GORM-backed implementation of QueryHourlySeries.
 func GormQueryHourlySeries(apiKeyID int64, hours int) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
 	gormDB := getGormDB()
@@ -1163,6 +1316,16 @@ func GormQueryHourlySeries(apiKeyID int64, hours int) ([]HourlyTokenPoint, []Hou
 	}
 	repo := &gormLogRepo{db: gormDB}
 	return repo.QueryHourlySeries(context.Background(), apiKeyID, hours)
+}
+
+// GormQueryHourlySeriesRange is the GORM-backed implementation of QueryHourlySeriesRange.
+func GormQueryHourlySeriesRange(apiKeyID int64, startUTC, endUTC time.Time) ([]HourlyTokenPoint, []HourlyModelPoint, error) {
+	gormDB := getGormDB()
+	if gormDB == nil {
+		return nil, nil, nil
+	}
+	repo := &gormLogRepo{db: gormDB}
+	return repo.queryHourlySeries(context.Background(), apiKeyID, startUTC, endUTC)
 }
 
 // GormQueryEntityStats is the GORM-backed implementation of QueryEntityStats.
