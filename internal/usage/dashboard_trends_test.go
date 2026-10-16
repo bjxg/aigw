@@ -165,3 +165,42 @@ func findThroughputValues(t *testing.T, points []DashboardThroughputPoint, label
 	t.Fatalf("missing throughput point with label %q", label)
 	return 0, 0
 }
+
+func TestQueryTotalUsersRange(t *testing.T) {
+	initTestUsageDB(t, config.RequestLogStorageConfig{StoreContent: false})
+	start := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	first, second, third, zero := int64(1), int64(2), int64(3), int64(0)
+	logs := []RequestLog{
+		{Timestamp: start, APIKeyID: 1, UserID: &first},
+		{Timestamp: start.Add(time.Hour), APIKeyID: 2, UserID: &first},
+		{Timestamp: start.Add(time.Hour), APIKeyID: 2, UserID: &second, Failed: true},
+		{Timestamp: start.Add(time.Hour), APIKeyID: 1},
+		{Timestamp: start.Add(time.Hour), APIKeyID: 1, UserID: &zero},
+		{Timestamp: start.Add(-time.Second), APIKeyID: 1, UserID: &third},
+		{Timestamp: end, APIKeyID: 1, UserID: &third},
+	}
+	for i := range logs {
+		if err := getGormDB().Create(&logs[i]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name       string
+		key        int64
+		start, end time.Time
+		want       int64
+	}{
+		{"跨 Key 去重且包含失败请求", 0, start, end, 2},
+		{"Key 筛选", 1, start, end, 1},
+		{"空范围", 0, end.Add(time.Hour), end.Add(2 * time.Hour), 0},
+		{"无结束时间", 0, start, time.Time{}, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := QueryTotalUsersRange(tc.key, tc.start, tc.end)
+			if err != nil || got != tc.want {
+				t.Fatalf("got %d, %v; want %d", got, err, tc.want)
+			}
+		})
+	}
+}

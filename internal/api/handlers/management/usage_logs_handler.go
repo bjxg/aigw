@@ -417,11 +417,23 @@ func (h *Handler) GetUsageChartData(c *gin.Context) {
 	days := intQueryDefault(c, "days", 7)
 	startUTC, endUTC, _, hasRange := dateRangeQuery(c)
 
+	userStart := startUTC
+	if !hasRange {
+		if days < 1 {
+			days = 7
+		}
+		userStart = usage.CutoffStartUTC(days)
+	}
+	totalUsers, err := usage.QueryTotalUsersRange(apiKeyID, userStart, endUTC)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	var daily []usage.DailySeriesPoint
 	var models []usage.ModelDistributionPoint
 	var hourlyTokens []usage.HourlyTokenPoint
 	var hourlyModels []usage.HourlyModelPoint
-	var err error
 
 	if hasRange {
 		daily, err = usage.QueryDailySeriesRange(apiKeyID, startUTC, endUTC)
@@ -493,6 +505,7 @@ func (h *Handler) GetUsageChartData(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"total_users":         totalUsers,
 		"daily_series":        daily,
 		"model_distribution":  models,
 		"hourly_tokens":       hourlyTokens,

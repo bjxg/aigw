@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.4] - 2026-10-17
+
+### Added
+- **Chart Data Total Users**: The `/v0/management/usage/chart-data` endpoint now returns `total_users` — the number of distinct users who issued requests within the selected time range (deduplicated across API keys, includes failed requests; requests without an associated user are excluded). Honors the existing API key filter and the `days` / date-range parameters (`internal/usage/repo_logs.go`, `internal/api/handlers/management/usage_logs_handler.go`).
+
 ## [0.2.3] - 2026-10-16
 
 ### Fixed

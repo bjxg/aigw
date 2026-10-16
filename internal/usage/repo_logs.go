@@ -1566,3 +1566,21 @@ func GormQueryRequestCountByAuthIndexSince(authIndex string, since time.Time) (i
 	}
 	return count, nil
 }
+
+// QueryTotalUsersRange 统计时间范围内发起请求的去重用户，未关联用户的请求不计入。
+func QueryTotalUsersRange(apiKeyID int64, startUTC, endUTC time.Time) (int64, error) {
+	db := getGormDB()
+	if db == nil {
+		return 0, nil
+	}
+	query := db.Model(&RequestLog{}).Where("timestamp >= ? AND user_id > 0", startUTC)
+	if !endUTC.IsZero() {
+		query = query.Where("timestamp < ?", endUTC)
+	}
+	if apiKeyID > 0 {
+		query = query.Where("api_key_id = ?", apiKeyID)
+	}
+	var count int64
+	err := query.Distinct("user_id").Count(&count).Error
+	return count, err
+}
