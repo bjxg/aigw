@@ -807,8 +807,12 @@ func (cfg *Config) SanitizeDatabase() {
 	if cfg.Database.Driver == "" {
 		cfg.Database.Driver = "sqlite"
 	}
-	if cfg.Database.Driver != "sqlite" && cfg.Database.Driver != "postgres" {
-		cfg.Database.Driver = "sqlite"
+	if cfg.Database.Driver == "postgresql" {
+		cfg.Database.Driver = "postgres"
+	}
+	url := strings.ToLower(strings.TrimSpace(cfg.Database.URL))
+	if strings.HasPrefix(url, "postgres://") || strings.HasPrefix(url, "postgresql://") {
+		cfg.Database.Driver = "postgres"
 	}
 }
 

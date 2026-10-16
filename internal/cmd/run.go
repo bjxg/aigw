@@ -6,9 +6,11 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,7 +31,11 @@ import (
 //   - cfg: The application configuration
 //   - configPath: The path to the configuration file
 //   - localPassword: Optional password accepted for local management requests
-func StartService(cfg *config.Config, configPath string, localPassword string) {
+func StartService(cfg *config.Config, configPath string, localPassword string) error {
+	cfg.SanitizeDatabase()
+	if cfg.Database.Driver == "postgres" && strings.TrimSpace(cfg.Database.URL) == "" {
+		return fmt.Errorf("database.url is required for PostgreSQL")
+	}
 	loc := config.ApplyTimeZone(cfg.Timezone)
 	dataDir := filepath.Join(filepath.Dir(configPath), "data")
 	_ = os.MkdirAll(dataDir, 0755)
@@ -66,7 +72,7 @@ func StartService(cfg *config.Config, configPath string, localPassword string) {
 
 	db.SetSQLDebug(cfg.Debug)
 	if err := usage.InitDB(dbDriver, url, cfg.RequestLogStorage, loc); err != nil {
-		log.Errorf("usage: failed to initialize database: %v", err)
+		return fmt.Errorf("failed to initialize database (%s): %w", dbDriver, err)
 	}
 	usage.MigrateAPIKeysFromConfig(cfg, configPath)
 	usage.MigrateAPIKeyPermissionProfilesFromYAML(configPath)
@@ -101,19 +107,29 @@ func StartService(cfg *config.Config, configPath string, localPassword string) {
 
 	service, err := builder.Build()
 	if err != nil {
-		log.Errorf("failed to build proxy service: %v", err)
-		return
+		return fmt.Errorf("failed to build proxy service: %w", err)
 	}
 
 	err = service.Run(runCtx)
 	if err != nil && !errors.Is(err, context.Canceled) {
-		log.Errorf("proxy service exited with error: %v", err)
+		return fmt.Errorf("proxy service exited with error: %w", err)
 	}
+	return nil
 }
 
 // StartServiceBackground starts the proxy service in a background goroutine
 // and returns a cancel function for shutdown and a done channel.
 func StartServiceBackground(cfg *config.Config, configPath string, localPassword string) (cancel func(), done <-chan struct{}) {
+	cfg.SanitizeDatabase()
+	failed := func(err error) (func(), <-chan struct{}) {
+		log.Errorf("failed to start proxy service: %v", err)
+		doneCh := make(chan struct{})
+		close(doneCh)
+		return func() {}, doneCh
+	}
+	if cfg.Database.Driver == "postgres" && strings.TrimSpace(cfg.Database.URL) == "" {
+		return failed(fmt.Errorf("database.url is required for PostgreSQL"))
+	}
 	loc := config.ApplyTimeZone(cfg.Timezone)
 	dataDir := filepath.Join(filepath.Dir(configPath), "data")
 	_ = os.MkdirAll(dataDir, 0755)
@@ -147,7 +163,7 @@ func StartServiceBackground(cfg *config.Config, configPath string, localPassword
 
 	db.SetSQLDebug(cfg.Debug)
 	if err := usage.InitDB(dbDriver, url, cfg.RequestLogStorage, loc); err != nil {
-		log.Errorf("usage: failed to initialize database: %v", err)
+		return failed(fmt.Errorf("failed to initialize database (%s): %w", dbDriver, err))
 	}
 	usage.MigrateAPIKeysFromConfig(cfg, configPath)
 	usage.MigrateAPIKeyPermissionProfilesFromYAML(configPath)

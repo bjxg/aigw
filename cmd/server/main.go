@@ -182,5 +182,8 @@ func runServiceMode(cfg *config.Config, configFilePath, password string, mode cl
 		cmd.WaitForCloudDeploy()
 		return
 	}
-	cmd.StartService(cfg, configFilePath, password)
+	if err := cmd.StartService(cfg, configFilePath, password); err != nil {
+		log.Errorf("failed to start service: %v", err)
+		os.Exit(1)
+	}
 }

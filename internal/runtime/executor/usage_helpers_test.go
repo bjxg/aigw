@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -194,5 +195,41 @@ func TestFirstTokenLatencyMsFromContext(t *testing.T) {
 
 	if got := firstTokenLatencyMsFromContext(ctx, requestedAt); got != 183 {
 		t.Fatalf("firstTokenLatencyMsFromContext() = %d, want %d", got, 183)
+	}
+}
+
+func TestParseClaudeUsageInputAndTotalIncludeCacheTokens(t *testing.T) {
+	tests := []struct {
+		name  string
+		data  string
+		total int64
+		input int64
+	}{
+		{"no cache", `{"usage":{"input_tokens":1435,"output_tokens":373}}`, 1808, 1435},
+		{"cache read", `{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":1435,"output_tokens":373,"cache_read_input_tokens":74112}}`, 75920, 75547},
+		{"cache creation", `{"usage":{"input_tokens":1435,"output_tokens":373,"cache_creation_input_tokens":100}}`, 1908, 1535},
+		{"cache read and creation", `{"usage":{"input_tokens":1435,"output_tokens":373,"cache_read_input_tokens":74112,"cache_creation_input_tokens":100}}`, 76020, 75647},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			detail := parseClaudeUsage([]byte(tt.data))
+			if detail.InputTokens != tt.input {
+				t.Fatalf("input tokens = %d, want %d", detail.InputTokens, tt.input)
+			}
+			openAI := parseOpenAIUsage([]byte(fmt.Sprintf(`{"usage":{"prompt_tokens":%d,"completion_tokens":373,"total_tokens":%d}}`, tt.input, tt.total)))
+			if detail.InputTokens != openAI.InputTokens || detail.TotalTokens != openAI.TotalTokens {
+				t.Fatalf("Claude input/total = %d/%d, OpenAI = %d/%d", detail.InputTokens, detail.TotalTokens, openAI.InputTokens, openAI.TotalTokens)
+			}
+			if detail.TotalTokens != tt.total {
+				t.Fatalf("response total tokens = %d, want %d", detail.TotalTokens, tt.total)
+			}
+			streamed, ok := parseClaudeStreamUsage([]byte("data: " + tt.data))
+			if !ok {
+				t.Fatal("stream usage was not recognized")
+			}
+			if streamed != detail {
+				t.Fatalf("stream usage = %+v, want %+v", streamed, detail)
+			}
+		})
 	}
 }

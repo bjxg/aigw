@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.3] - 2026-10-16
+
+### Fixed
+- **Claude Token Statistics**: Claude usage parsing (`parseClaudeUsage` / `parseClaudeStreamUsage`) now normalizes `input_tokens` to include `cache_read_input_tokens` and `cache_creation_input_tokens`, matching OpenAI usage semantics (where `prompt_tokens` already includes cached tokens). As a result, `request_logs.input_tokens` and `total_tokens` now reflect the full context for Claude protocol requests instead of omitting cached tokens.
+- **Startup Error Handling**: `StartService` / `StartServiceBackground` now propagate startup failures as errors instead of only logging them; the server exits with code 1 and a clear `failed to start service` message when the database or proxy service fails to initialize (previously startup could fail silently, e.g. on an unreachable PostgreSQL).
+- Note: the Claude token fix also aligns TPM quota accounting, since TPM tracking is driven by `total_tokens`. Historical rows in `request_logs` are not retroactively updated.
+
+### Changed
+- **Database Config Sanitization**: `SanitizeDatabase` now accepts `postgresql` as a driver alias for `postgres`, infers the `postgres` driver from `postgres://` / `postgresql://` URL schemes, and no longer silently falls back to SQLite for unknown drivers. Startup fails fast with an explicit error when PostgreSQL is selected without a `database.url` (`internal/config/config.go`, `internal/cmd/run.go`).
+
 ## [Unreleased]
 
 ### Changed

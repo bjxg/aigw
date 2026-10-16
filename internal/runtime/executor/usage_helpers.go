@@ -696,6 +696,8 @@ func parseClaudeUsage(data []byte) usage.Detail {
 		// fall back to creation tokens when read tokens are absent
 		detail.CachedTokens = usageNode.Get("cache_creation_input_tokens").Int()
 	}
+	// Normalize Claude input to include cache reads and writes, matching OpenAI usage.
+	detail.InputTokens += usageNode.Get("cache_read_input_tokens").Int() + usageNode.Get("cache_creation_input_tokens").Int()
 	detail.TotalTokens = detail.InputTokens + detail.OutputTokens
 	return detail
 }
@@ -717,6 +719,8 @@ func parseClaudeStreamUsage(line []byte) (usage.Detail, bool) {
 	if detail.CachedTokens == 0 {
 		detail.CachedTokens = usageNode.Get("cache_creation_input_tokens").Int()
 	}
+	// Normalize Claude input to include cache reads and writes, matching OpenAI usage.
+	detail.InputTokens += usageNode.Get("cache_read_input_tokens").Int() + usageNode.Get("cache_creation_input_tokens").Int()
 	detail.TotalTokens = detail.InputTokens + detail.OutputTokens
 	return detail, true
 }
