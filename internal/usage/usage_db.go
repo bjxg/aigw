@@ -6,10 +6,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	coreusage "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/usage"
 )
 
 // LogRow represents a single request log entry returned by QueryLogs.
 type LogRow struct {
+	ClientUserAgent string    `json:"client_user_agent,omitempty"`
+	ClientName      string    `json:"client_name"`
+	ClientVariant   string    `json:"client_variant"`
+	ClientVersion   string    `json:"client_version"`
 	ID              int64     `json:"id"`
 	Timestamp       time.Time `json:"timestamp"`
 	APIKeyID        int64     `json:"api_key_id"`
@@ -34,17 +40,18 @@ type LogRow struct {
 
 // LogQueryParams holds filter/pagination parameters for QueryLogs.
 type LogQueryParams struct {
-	Page         int       // 1-based
-	Size         int       // rows per page
-	Days         int       // time range in days
-	StartUTC     time.Time // optional explicit range start (UTC, inclusive); overrides Days when set
-	EndUTC       time.Time // optional explicit range end (UTC, exclusive)
-	APIKeyID     int64     // filter by api_key_id; 0 = no filter, -1 = system requests (api_key_id = 0)
-	UserID       int64     // filter by user_id; 0 = no filter
-	Model        string    // exact match filter
-	Status       string    // "success", "failed", or "" (all)
-	AuthIndexes  []string  // optional auth_index IN (...) filter
-	ChannelNames []string  // optional channel_name IN (...) filter
+	IncludeClientUserAgent bool      // 管理端悬停提示需要原始 UA；其他查询默认不返回。
+	Page                   int       // 1-based
+	Size                   int       // rows per page
+	Days                   int       // time range in days
+	StartUTC               time.Time // optional explicit range start (UTC, inclusive); overrides Days when set
+	EndUTC                 time.Time // optional explicit range end (UTC, exclusive)
+	APIKeyID               int64     // filter by api_key_id; 0 = no filter, -1 = system requests (api_key_id = 0)
+	UserID                 int64     // filter by user_id; 0 = no filter
+	Model                  string    // exact match filter
+	Status                 string    // "success", "failed", or "" (all)
+	AuthIndexes            []string  // optional auth_index IN (...) filter
+	ChannelNames           []string  // optional channel_name IN (...) filter
 }
 
 // LogQueryResult holds the paginated query result.
@@ -130,8 +137,8 @@ func InsertLogWithDetails(apiKeyID int64, apiKeyName, model, source, channelName
 // InsertLogWithUserID writes a request log with an associated user_id.
 func InsertLogWithUserID(apiKeyID int64, apiKeyName string, userID *int64, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
-	inputContent, outputContent, detailContent string) {
-	GormInsertLog(apiKeyID, apiKeyName, userID, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent)
+	inputContent, outputContent, detailContent string, clients ...coreusage.ClientIdentity) {
+	GormInsertLog(apiKeyID, apiKeyName, userID, model, source, channelName, authIndex, failed, timestamp, latencyMs, firstTokenMs, tokens, inputContent, outputContent, detailContent, clients...)
 }
 
 // tokenUsageCallback is set by SetTokenUsageCallback to notify external

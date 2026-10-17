@@ -67,15 +67,16 @@ func (h *Handler) GetUsageLogs(c *gin.Context) {
 	}
 
 	params := usage.LogQueryParams{
-		Page:         intQueryDefault(c, "page", 1),
-		Size:         intQueryDefault(c, "size", 50),
-		Days:         intQueryDefault(c, "days", 7),
-		APIKeyID:     int64QueryDefault(c, "api_key_id", 0),
-		UserID:       int64QueryDefault(c, "user_id", 0),
-		Model:        strings.TrimSpace(c.Query("model")),
-		Status:       strings.TrimSpace(c.Query("status")),
-		AuthIndexes:  authIndexes,
-		ChannelNames: channelNames,
+		IncludeClientUserAgent: true,
+		Page:                   intQueryDefault(c, "page", 1),
+		Size:                   intQueryDefault(c, "size", 50),
+		Days:                   intQueryDefault(c, "days", 7),
+		APIKeyID:               int64QueryDefault(c, "api_key_id", 0),
+		UserID:                 int64QueryDefault(c, "user_id", 0),
+		Model:                  strings.TrimSpace(c.Query("model")),
+		Status:                 strings.TrimSpace(c.Query("status")),
+		AuthIndexes:            authIndexes,
+		ChannelNames:           channelNames,
 	}
 	if startUTC, endUTC, _, ok := dateRangeQuery(c); ok {
 		params.StartUTC = startUTC

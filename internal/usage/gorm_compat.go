@@ -55,6 +55,11 @@ func InitDB(driver, dsn string, storageCfg config.RequestLogStorageConfig, loc *
 		log.Warnf("usage: GORM auto-migration failed: %v", err)
 	}
 
+	// 旧正文列只有在全部为空时才清理，失败保留原表并允许服务继续启动。
+	if err := dropEmptyLegacyLogContentColumns(gormDB); err != nil {
+		log.Warnf("usage: legacy request log columns retained: %v", err)
+	}
+
 	// Seed default data and load caches
 	log.Debugf("usage: merging legacy pricing into model_configs")
 	mergeLegacyPricingIntoModelConfigs()
@@ -146,4 +151,42 @@ func getModelTableName(d *gorm.DB, model interface{}) (string, error) {
 		return "", err
 	}
 	return stmt.Schema.Table, nil
+}
+
+// 使用原生 DROP COLUMN，避免 SQLite GORM 删列重建表破坏外键或索引。
+// 非空值（包括纯空白）禁止删除；两个列在同一事务中检查和删除。
+func dropEmptyLegacyLogContentColumns(database *gorm.DB) error {
+	return database.Transaction(func(tx *gorm.DB) error {
+		switch tx.Dialector.Name() {
+		case "postgres":
+			// 阻止检查和删列之间有其他实例写入，同时串行化并发升级。
+			if err := tx.Exec("LOCK TABLE request_logs IN ACCESS EXCLUSIVE MODE").Error; err != nil {
+				return err
+			}
+		case "sqlite":
+		default:
+			return fmt.Errorf("unsupported legacy column migration driver: %s", tx.Dialector.Name())
+		}
+		columns := make([]string, 0, 2)
+		for _, column := range []string{"input_content", "output_content"} {
+			if !tx.Migrator().HasColumn("request_logs", column) {
+				continue
+			}
+			var count int64
+			if err := tx.Table("request_logs").Where(column + " IS NOT NULL AND LENGTH(" + column + ") > 0").Count(&count).Error; err != nil {
+				return err
+			}
+			if count > 0 {
+				return fmt.Errorf("request_logs.%s contains legacy content; migrate it before removing columns", column)
+			}
+			columns = append(columns, column)
+		}
+		for _, column := range columns {
+			// 列名来自上面的固定白名单，不接受外部输入。
+			if err := tx.Exec("ALTER TABLE request_logs DROP COLUMN " + column).Error; err != nil {
+				return fmt.Errorf("drop legacy column %s: %w", column, err)
+			}
+		}
+		return nil
+	})
 }

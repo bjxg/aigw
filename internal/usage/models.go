@@ -5,32 +5,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	coreusage "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/usage"
 )
 
 // --- RequestLog ---
 
 // RequestLog maps to the request_logs table.
 type RequestLog struct {
-	ID              int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Timestamp       time.Time `gorm:"index:idx_logs_timestamp;not null" json:"timestamp"`
-	APIKeyID        int64     `gorm:"index:idx_logs_api_key_id;not null;default:0" json:"api_key_id"`
-	APIKeyName      string    `gorm:"not null;default:''" json:"api_key_name"`
-	UserID          *int64    `gorm:"index:idx_logs_user_id;default:NULL" json:"user_id,omitempty"`
-	Model           string    `gorm:"index:idx_logs_model;not null;default:''" json:"model"`
-	Source          string    `gorm:"not null;default:''" json:"source"`
-	ChannelName     string    `gorm:"not null;default:''" json:"channel_name"`
-	AuthIndex       string    `gorm:"index:idx_logs_auth_index;not null;default:''" json:"auth_index"`
-	Failed          bool      `gorm:"index:idx_logs_failed;not null;default:false" json:"failed"`
-	LatencyMs       int64     `gorm:"not null;default:0" json:"latency_ms"`
-	FirstTokenMs    int64     `gorm:"not null;default:0" json:"first_token_ms"`
-	InputTokens     int64     `gorm:"not null;default:0" json:"input_tokens"`
-	OutputTokens    int64     `gorm:"not null;default:0" json:"output_tokens"`
-	ReasoningTokens int64     `gorm:"not null;default:0" json:"reasoning_tokens"`
-	CachedTokens    int64     `gorm:"not null;default:0" json:"cached_tokens"`
-	TotalTokens     int64     `gorm:"not null;default:0" json:"total_tokens"`
-	Cost            float64   `gorm:"not null;default:0" json:"cost"`
-	InputContent    string    `gorm:"not null;default:''" json:"-"` // legacy inline content, kept for migration
-	OutputContent   string    `gorm:"not null;default:''" json:"-"` // legacy inline content, kept for migration
+	coreusage.ClientIdentity `gorm:"embedded"`
+	ID                       int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Timestamp                time.Time `gorm:"index:idx_logs_timestamp;not null" json:"timestamp"`
+	APIKeyID                 int64     `gorm:"index:idx_logs_api_key_id;not null;default:0" json:"api_key_id"`
+	APIKeyName               string    `gorm:"not null;default:''" json:"api_key_name"`
+	UserID                   *int64    `gorm:"index:idx_logs_user_id;default:NULL" json:"user_id,omitempty"`
+	Model                    string    `gorm:"index:idx_logs_model;not null;default:''" json:"model"`
+	Source                   string    `gorm:"not null;default:''" json:"source"`
+	ChannelName              string    `gorm:"not null;default:''" json:"channel_name"`
+	AuthIndex                string    `gorm:"index:idx_logs_auth_index;not null;default:''" json:"auth_index"`
+	Failed                   bool      `gorm:"index:idx_logs_failed;not null;default:false" json:"failed"`
+	LatencyMs                int64     `gorm:"not null;default:0" json:"latency_ms"`
+	FirstTokenMs             int64     `gorm:"not null;default:0" json:"first_token_ms"`
+	InputTokens              int64     `gorm:"not null;default:0" json:"input_tokens"`
+	OutputTokens             int64     `gorm:"not null;default:0" json:"output_tokens"`
+	ReasoningTokens          int64     `gorm:"not null;default:0" json:"reasoning_tokens"`
+	CachedTokens             int64     `gorm:"not null;default:0" json:"cached_tokens"`
+	TotalTokens              int64     `gorm:"not null;default:0" json:"total_tokens"`
+	Cost                     float64   `gorm:"not null;default:0" json:"cost"`
 }
 
 // TableName overrides the table name.

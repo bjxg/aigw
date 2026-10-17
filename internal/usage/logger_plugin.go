@@ -325,7 +325,7 @@ func (s *RequestStatistics) Record(ctx context.Context, record coreusage.Record)
 	}
 	InsertLogWithUserID(apiKeyID, apiKeyName, userID, modelName, record.Source, record.ChannelName,
 		record.AuthIndex, failed, timestamp, record.LatencyMs, record.FirstTokenMs, detail,
-		record.InputContent, record.OutputContent, record.DetailContent)
+		record.InputContent, record.OutputContent, record.DetailContent, record.ClientIdentity)
 
 	// In-memory statistics are optional; skip when disabled.
 	if !statisticsEnabled.Load() {

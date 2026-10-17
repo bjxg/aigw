@@ -32,6 +32,7 @@ auths/*
 
 # Documentation
 docs/*
+!docs/request-log-client-identity.md
 !docs/images/
 !docs/images/*.png
 !docs/internal-review/

@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
+	"github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/usage"
 )
 
 func TestParseOpenAIUsageChatCompletions(t *testing.T) {
@@ -231,5 +232,19 @@ func TestParseClaudeUsageInputAndTotalIncludeCacheTokens(t *testing.T) {
 				t.Fatalf("stream usage = %+v, want %+v", streamed, detail)
 			}
 		})
+	}
+}
+
+func TestUsageReporterClientSnapshot(t *testing.T) {
+	gc, _ := gin.CreateTestContext(httptest.NewRecorder())
+	gc.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	original := usage.ParseClientIdentity("codex_cli_rs/0.125.0")
+	gc.Request = gc.Request.WithContext(usage.WithClientIdentity(gc.Request.Context(), original))
+	gc.Request.Header.Set("User-Agent", "claude-cli/99")
+	ctx := context.WithValue(context.Background(), util.ContextKeyGin, gc)
+	reporter := newUsageReporter(ctx, "claude", "model", nil)
+	gc.Request = nil
+	if reporter.clientIdentity != original {
+		t.Fatalf("快照受上游或请求生命周期影响: %#v", reporter.clientIdentity)
 	}
 }

@@ -25,16 +25,17 @@ import (
 const usageReporterOutputMemoryLimit = 256 * 1024
 
 type usageReporter struct {
-	provider    string
-	model       string
-	authID      string
-	authIndex   string
-	apiKey      string
-	source      string
-	channelName string
-	requestedAt time.Time
-	once        sync.Once
-	contentMu   sync.Mutex
+	clientIdentity usage.ClientIdentity
+	provider       string
+	model          string
+	authID         string
+	authIndex      string
+	apiKey         string
+	source         string
+	channelName    string
+	requestedAt    time.Time
+	once           sync.Once
+	contentMu      sync.Mutex
 
 	// Content captured for log detail viewer
 	inputContent  string
@@ -46,12 +47,22 @@ type usageReporter struct {
 
 func newUsageReporter(ctx context.Context, provider, model string, auth *cliproxyauth.Auth) *usageReporter {
 	apiKey := apiKeyFromContext(ctx)
+	identity, ok := usage.ClientIdentityFromContext(ctx)
+	if !ok && ctx != nil {
+		if gc, valid := ctx.Value(util.ContextKeyGin).(*gin.Context); valid && gc != nil && gc.Request != nil {
+			identity, ok = usage.ClientIdentityFromContext(gc.Request.Context())
+			if !ok {
+				identity = usage.ParseClientHeaders(gc.Request.Header)
+			}
+		}
+	}
 	reporter := &usageReporter{
-		provider:    provider,
-		model:       model,
-		requestedAt: time.Now(),
-		apiKey:      apiKey,
-		source:      resolveUsageSource(auth, apiKey),
+		clientIdentity: identity,
+		provider:       provider,
+		model:          model,
+		requestedAt:    time.Now(),
+		apiKey:         apiKey,
+		source:         resolveUsageSource(auth, apiKey),
 	}
 	if auth != nil {
 		reporter.authID = auth.ID
@@ -219,21 +230,22 @@ func (r *usageReporter) publishWithOutcome(ctx context.Context, detail usage.Det
 		}
 		firstTokenMs := firstTokenLatencyMsFromContext(ctx, r.requestedAt)
 		usage.PublishRecord(ctx, usage.Record{
-			Provider:      r.provider,
-			Model:         r.model,
-			Source:        r.source,
-			ChannelName:   r.channelName,
-			APIKey:        r.apiKey,
-			AuthID:        r.authID,
-			AuthIndex:     r.authIndex,
-			RequestedAt:   r.requestedAt,
-			LatencyMs:     latencyMs,
-			FirstTokenMs:  firstTokenMs,
-			Failed:        failed,
-			Detail:        detail,
-			InputContent:  inputContent,
-			OutputContent: outputContent,
-			DetailContent: buildRequestDetailContent(ctx),
+			ClientIdentity: r.clientIdentity,
+			Provider:       r.provider,
+			Model:          r.model,
+			Source:         r.source,
+			ChannelName:    r.channelName,
+			APIKey:         r.apiKey,
+			AuthID:         r.authID,
+			AuthIndex:      r.authIndex,
+			RequestedAt:    r.requestedAt,
+			LatencyMs:      latencyMs,
+			FirstTokenMs:   firstTokenMs,
+			Failed:         failed,
+			Detail:         detail,
+			InputContent:   inputContent,
+			OutputContent:  outputContent,
+			DetailContent:  buildRequestDetailContent(ctx),
 		})
 	})
 }
@@ -254,21 +266,22 @@ func (r *usageReporter) ensurePublished(ctx context.Context) {
 		}
 		firstTokenMs := firstTokenLatencyMsFromContext(ctx, r.requestedAt)
 		usage.PublishRecord(ctx, usage.Record{
-			Provider:      r.provider,
-			Model:         r.model,
-			Source:        r.source,
-			ChannelName:   r.channelName,
-			APIKey:        r.apiKey,
-			AuthID:        r.authID,
-			AuthIndex:     r.authIndex,
-			RequestedAt:   r.requestedAt,
-			LatencyMs:     latencyMs,
-			FirstTokenMs:  firstTokenMs,
-			Failed:        false,
-			Detail:        usage.Detail{},
-			InputContent:  inputContent,
-			OutputContent: outputContent,
-			DetailContent: buildRequestDetailContent(ctx),
+			ClientIdentity: r.clientIdentity,
+			Provider:       r.provider,
+			Model:          r.model,
+			Source:         r.source,
+			ChannelName:    r.channelName,
+			APIKey:         r.apiKey,
+			AuthID:         r.authID,
+			AuthIndex:      r.authIndex,
+			RequestedAt:    r.requestedAt,
+			LatencyMs:      latencyMs,
+			FirstTokenMs:   firstTokenMs,
+			Failed:         false,
+			Detail:         usage.Detail{},
+			InputContent:   inputContent,
+			OutputContent:  outputContent,
+			DetailContent:  buildRequestDetailContent(ctx),
 		})
 	})
 }

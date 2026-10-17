@@ -1,56 +1,23 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+本文件记录 aigw-server 的显著变更。日期格式为 YYYY-MM-DD。
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
-
-## [0.2.4] - 2026-10-17
+## 2026-10-17
 
 ### Added
-- **Chart Data Total Users**: The `/v0/management/usage/chart-data` endpoint now returns `total_users` — the number of distinct users who issued requests within the selected time range (deduplicated across API keys, includes failed requests; requests without an associated user are excluded). Honors the existing API key filter and the `days` / date-range parameters (`internal/usage/repo_logs.go`, `internal/api/handlers/management/usage_logs_handler.go`).
 
-## [0.2.3] - 2026-10-16
-
-### Fixed
-- **Claude Token Statistics**: Claude usage parsing (`parseClaudeUsage` / `parseClaudeStreamUsage`) now normalizes `input_tokens` to include `cache_read_input_tokens` and `cache_creation_input_tokens`, matching OpenAI usage semantics (where `prompt_tokens` already includes cached tokens). As a result, `request_logs.input_tokens` and `total_tokens` now reflect the full context for Claude protocol requests instead of omitting cached tokens.
-- **Startup Error Handling**: `StartService` / `StartServiceBackground` now propagate startup failures as errors instead of only logging them; the server exits with code 1 and a clear `failed to start service` message when the database or proxy service fails to initialize (previously startup could fail silently, e.g. on an unreachable PostgreSQL).
-- Note: the Claude token fix also aligns TPM quota accounting, since TPM tracking is driven by `total_tokens`. Historical rows in `request_logs` are not retroactively updated.
+- 请求日志客户端识别：`request_logs` 新增 `client_name`、`client_variant`、`client_version`、`client_user_agent`、`client_user_agent_truncated` 五个字段。入口中间件在任何上游指纹改写前采集入站 User-Agent 快照，经 usage reporter 传递到异步持久化层。
+- 客户端产品解析基于集中式映射表与通用 product/version 提取器，已支持 Codex、Claude Code、Pi（含 `Originator: pi` 补充识别）、OpenCode（新旧两种 UA 格式）、WorkBuddy、CodeBuddy；多产品信号冲突时返回未知。
+- 原始 UA 超过 4096 字节时按 UTF-8 字符边界截断并置 `client_user_agent_truncated = true`；非法 UTF-8 字节替换为问号，避免数据库拒绝写入；截断后解析会丢弃最后一个不完整 token，防止半截版本号误判。
+- 管理端日志详情（`details`）自动合并客户端字段；普通列表返回 `client_name` / `client_variant` / `client_version`，管理端查询额外返回原始 UA。
+- 新增设计文档 `docs/request-log-client-identity.md`（含 `.gitignore` 例外）。
 
 ### Changed
-- **Database Config Sanitization**: `SanitizeDatabase` now accepts `postgresql` as a driver alias for `postgres`, infers the `postgres` driver from `postgres://` / `postgresql://` URL schemes, and no longer silently falls back to SQLite for unknown drivers. Startup fails fast with an explicit error when PostgreSQL is selected without a `database.url` (`internal/config/config.go`, `internal/cmd/run.go`).
 
-## [Unreleased]
+- `request_logs` 主表移除遗留的 `input_content`、`output_content` 列，请求正文统一存储在独立正文表 `request_log_content`；正文大小统计与 `has_content` 仅依赖正文表。
+- `InitDB` 在迁移后执行安全清理：遗留列仅当存在且数据为 NULL/空字符串时在同一事务中删除（PostgreSQL 取表级独占锁）；存在实际数据（含纯空白）时保留两列并记录警告；迁移失败仅告警，不影响服务启动。
+- GORM 迁移沿用只增加缺失列的策略，新库不再创建遗留列；回滚旧版本时空列可由旧版自动加列机制重建。
 
-### Changed
-- **README**: Updated project positioning to reflect the new architecture based on CliRelay.
-- **Docs**: Simplified documentation and removed outdated feature descriptions.
+## 2026-10-16 及更早
 
-## [0.1.0] - 2025-XX-XX
-
-### Overview
-This release marks the initial transformation of the project from a full AI CLI proxy into a lightweight **AI Gateway**. The core AI proxying and protocol translation responsibilities have been offloaded to [CliRelay](https://github.com/kittors/CliRelay) (upstream [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)), allowing this project to focus on management, analytics, and access control.
-
-### Removed
-- **OAuth Module**: Removed all OAuth authentication flows (Gemini, Claude, Codex, Qwen, etc.) from the core codebase.
-- **File Authentication**: Removed the file-based authentication system.
-- **Protocol Translation**: Removed the protocol format translation layer.
-- **TUI (Terminal UI)**: Removed the terminal-based management interface.
-- **Updater Sidecar**: Removed the built-in auto-updater component.
-
-### Added
-- **User Management**: Introduced a standalone user system with user CRUD operations and role-based associations.
-- **API Key Association**: API Keys can now be linked to specific users for resource ownership and permission control.
-- **PostgreSQL Support**: Added GORM-based PostgreSQL backend support alongside the existing SQLite database.
-
-### Enhanced
-- **Usage Analytics**: Migrated the usage database layer to GORM, enabling compatibility with PostgreSQL.
-- **API Key Management**: Added support for permission profiles to bulk-control available models, channel groups, and quota limits.
-- **Management Panel (`/manage`)**: Completely rebuilt the frontend dashboard to align with the new Gateway-focused architecture.
-
-### Architecture
-- `internal/auth/` and `internal/tui/` directories removed.
-- `internal/usage/` expanded to include user management responsibilities.
-- Legacy `internal/store/` config/auth mirror removed.
-
-### Notes
-- If OAuth, file authentication, or protocol translation capabilities are required, users should deploy **CliRelay** as an independent upstream and configure `aigw` to route traffic through it.
+历史变更见 Git 提交记录。

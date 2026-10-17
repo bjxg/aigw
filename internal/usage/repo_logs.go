@@ -2,12 +2,14 @@ package usage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/db"
+	coreusage "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/usage"
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -131,6 +133,10 @@ func (r *gormLogRepo) Query(ctx context.Context, params LogQueryParams) (LogQuer
 
 	// logRowScan is used to scan DB rows into a flat structure, then copy to LogRow.
 	type logRowScan struct {
+		ClientUserAgent string
+		ClientName      string
+		ClientVariant   string
+		ClientVersion   string
 		ID              int64
 		Timestamp       time.Time
 		APIKeyID        int64
@@ -153,11 +159,15 @@ func (r *gormLogRepo) Query(ctx context.Context, params LogQueryParams) (LogQuer
 	}
 
 	var scanRows []logRowScan
+	clientUAColumn := ""
+	if params.IncludeClientUserAgent {
+		clientUAColumn = "client_user_agent, "
+	}
 	result := query.
-		Select(`id, timestamp, api_key_id, api_key_name, user_id, model, source, channel_name, auth_index,
+		Select(clientUAColumn + `client_name, client_variant, client_version, id, timestamp, api_key_id, api_key_name, user_id, model, source, channel_name, auth_index,
 			failed, latency_ms, first_token_ms, input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens, cost,
 			(CASE WHEN EXISTS (SELECT 1 FROM request_log_content content WHERE content.log_id = request_logs.id)
-				OR length(input_content) > 0 OR length(output_content) > 0 THEN 1 ELSE 0 END) as has_content`).
+				THEN 1 ELSE 0 END) as has_content`).
 		Order("timestamp DESC").
 		Limit(params.Size).
 		Offset(offset).
@@ -169,6 +179,10 @@ func (r *gormLogRepo) Query(ctx context.Context, params LogQueryParams) (LogQuer
 	resultItems := make([]LogRow, 0, len(scanRows))
 	for _, s := range scanRows {
 		resultItems = append(resultItems, LogRow{
+			ClientUserAgent: s.ClientUserAgent,
+			ClientName:      s.ClientName,
+			ClientVariant:   s.ClientVariant,
+			ClientVersion:   s.ClientVersion,
 			ID:              s.ID,
 			Timestamp:       s.Timestamp,
 			APIKeyID:        s.APIKeyID,
@@ -261,6 +275,12 @@ func (r *gormLogRepo) QueryContentPart(ctx context.Context, id int64, part strin
 		return LogContentPartResult{}, err
 	}
 
+	var identityLog RequestLog
+	if part == "details" {
+		if err := r.db.WithContext(ctx).Select("id, model, client_name, client_variant, client_version, client_user_agent, client_user_agent_truncated").First(&identityLog, id).Error; err != nil {
+			return LogContentPartResult{}, err
+		}
+	}
 	column := "input_content"
 	if part == "output" {
 		column = "output_content"
@@ -288,17 +308,13 @@ func (r *gormLogRepo) QueryContentPart(ctx context.Context, id int64, part strin
 		return LogContentPartResult{
 			ID:      logID,
 			Model:   model,
-			Content: decoded,
+			Content: mergeClientIdentityDetails(decoded, part, identityLog.ClientIdentity),
 			Part:    part,
 		}, nil
 	}
 
 	if part == "details" {
-		var reqLog RequestLog
-		if err := r.db.WithContext(ctx).Select("id, model").First(&reqLog, id).Error; err != nil {
-			return LogContentPartResult{}, fmt.Errorf("usage: query log content part: %w", err)
-		}
-		return LogContentPartResult{ID: reqLog.ID, Model: reqLog.Model, Part: part}, nil
+		return LogContentPartResult{ID: identityLog.ID, Model: identityLog.Model, Part: part, Content: mergeClientIdentityDetails("", part, identityLog.ClientIdentity)}, nil
 	}
 
 	return LogContentPartResult{}, fmt.Errorf("usage: query log content part: not found (id=%d)", id)
@@ -769,18 +785,7 @@ func (r *gormLogRepo) QueryLogStorageBytes(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("usage: query request log storage bytes: %w", err)
 	}
 
-	// Count bytes from legacy inline content in request_logs
-	var legacyBytes int64
-	err = r.db.WithContext(ctx).Model(&RequestLog{}).
-		Select("COALESCE(SUM(CASE WHEN LENGTH(input_content) > 0 OR LENGTH(output_content) > 0 THEN LENGTH(input_content) + LENGTH(output_content) ELSE 0 END), 0)").
-		Where("LENGTH(input_content) > 0 OR LENGTH(output_content) > 0").
-		Scan(&legacyBytes).Error
-	if err != nil {
-		// Non-fatal: legacy content may not exist
-		return contentBytes, nil
-	}
-
-	return contentBytes + legacyBytes, nil
+	return contentBytes, nil
 }
 
 // --- GetChannelAvgLatency ---
@@ -1085,7 +1090,7 @@ func applyAuthIndexAndChannelFilters(query *gorm.DB, params LogQueryParams) *gor
 // It writes a single request log entry and its content.
 func GormInsertLog(apiKeyID int64, apiKeyName string, userID *int64, model, source, channelName, authIndex string,
 	failed bool, timestamp time.Time, latencyMs, firstTokenMs int64, tokens TokenStats,
-	inputContent, outputContent, detailContent string) {
+	inputContent, outputContent, detailContent string, clients ...coreusage.ClientIdentity) {
 
 	gormDB := getGormDB()
 	if gormDB == nil {
@@ -1111,6 +1116,9 @@ func GormInsertLog(apiKeyID int64, apiKeyName string, userID *int64, model, sour
 		TotalTokens:     tokens.TotalTokens,
 	}
 
+	if len(clients) > 0 {
+		reqLog.ClientIdentity = clients[0]
+	}
 	repo := &gormLogRepo{db: gormDB}
 	if err := repo.Insert(context.Background(), reqLog, inputContent, outputContent, detailContent); err != nil {
 		log.Errorf("usage: insert log via GORM: %v", err)
@@ -1583,4 +1591,35 @@ func QueryTotalUsersRange(apiKeyID int64, startUTC, endUTC time.Time) (int64, er
 	var count int64
 	err := query.Distinct("user_id").Count(&count).Error
 	return count, err
+}
+
+// 客户端信息来自主表，不受正文开关或正文过期清理影响。
+func mergeClientIdentityDetails(raw, part string, identity coreusage.ClientIdentity) string {
+	if part != "details" || identity == (coreusage.ClientIdentity{}) {
+		return raw
+	}
+	detail := map[string]any{}
+	if raw != "" {
+		if err := json.Unmarshal([]byte(raw), &detail); err != nil {
+			return raw
+		}
+	}
+	if detail == nil {
+		detail = map[string]any{}
+	}
+	client, _ := detail["client"].(map[string]any)
+	if client == nil {
+		client = map[string]any{}
+	}
+	client["client_name"] = identity.ClientName
+	client["client_variant"] = identity.ClientVariant
+	client["client_version"] = identity.ClientVersion
+	client["client_user_agent"] = identity.ClientUserAgent
+	client["client_user_agent_truncated"] = identity.ClientUserAgentTruncated
+	detail["client"] = client
+	encoded, err := json.Marshal(detail)
+	if err != nil {
+		return raw
+	}
+	return string(encoded)
 }

@@ -235,6 +235,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	}
 
 	// Add middleware
+	engine.Use(middleware.ClientIdentityMiddleware())
 	engine.Use(logging.GinLogrusLogger())
 	engine.Use(logging.GinLogrusRecovery())
 	for _, mw := range optionState.extraMiddleware {
